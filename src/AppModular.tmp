@@ -1,0 +1,848 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import type { Apu, FinancialParams, TabType } from './types';
+import { apus } from './data/defaults';
+import { unitCost, calculateBudgetTotals } from './utils/calculations';
+import { fmt } from './utils/formatters';
+import { useResources } from './hooks/useResources';
+import { useBudget } from './hooks/useBudget';
+import { useTemplates } from './hooks/useTemplates';
+import { useNotifications } from './hooks/useNotifications';
+import { useAdvancedExport, ExportDialog, ExportOptions } from './hooks/advancedExport';
+import { useFinancialValidation } from './hooks/useValidation';
+import { ProjectManagerProvider } from './hooks/projectManager';
+import { CollabProvider, CollabSidebar, useCollab } from './contexts/CollabContext';
+import { HelpProvider, HelpPanel } from './hooks/help';
+import { TabSwitcher } from './components/TabSwitcher';
+import { AppHeader } from './components/AppHeader';
+import { NotificationToast } from './components/NotificationToast';
+import { OfflineBanner, ConnectionStatus, OfflineDataManager } from './components/OfflineComponents';
+import { ThemeToggle } from './components/ThemeComponents';
+import { CsvImportDialog } from './components/CsvImportDialog';
+import { ProjectManager } from './components/ProjectManager';
+import {
+  ShortcutHelpModal,
+  useRegisterShortcuts,
+  commonShortcuts,
+} from './contexts/ShortcutContext';
+import {
+  useScreenReaderAnnouncements,
+  SkipLink,
+  LandmarkRegion,
+} from './hooks/accessibility';
+import { useOnlineStatus } from './hooks/offline';
+
+type BudgetRowView = {
+  id: string;
+  apu: Apu | undefined;
+  metrados: number;
+  unitCost: number;
+  totalDirect: number;
+};
+
+const apusIndex: Record<string, Apu> = Object.fromEntries(
+  apus.map((apu) => [apu.id, apu])
+) as Record<string, Apu>;
+
+const ApuTab: React.FC<{
+  selectedApuId: string;
+  onSelect: (id: string) => void;
+  resources: ReturnType<typeof useResources>['resources'];
+  updateResourcePrice: ReturnType<typeof useResources>['updateResourcePrice'];
+}> = ({ selectedApuId, onSelect, resources, updateResourcePrice }) => {
+  const selectedApu = apusIndex[selectedApuId] ?? apus[0];
+  const cost = useMemo(() => {
+    if (!selectedApu) return null;
+    return unitCost(selectedApu, resources, apusIndex);
+  }, [selectedApu, resources]);
+
+  return (
+    <div className="space-y-6" data-tour="apu-tab">
+      <div className="grid gap-4 lg:grid-cols-12" data-tour="apu-selector">
+        <div className="lg:col-span-4 space-y-3">
+          <label className="block text-sm font-medium text-slate-300">
+            Selecciona un APU
+          </label>
+          <select
+            value={selectedApu?.id}
+            onChange={(event) => onSelect(event.target.value)}
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          >
+            {apus.map((apu) => (
+              <option key={apu.id} value={apu.id}>
+                {apu.codigo} - {apu.descripcion}
+              </option>
+            ))}
+          </select>
+
+          {selectedApu && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-100">
+                {selectedApu.descripcion}
+              </h3>
+              <p className="text-sm text-slate-400">
+                Unidad de salida:{' '}
+                <span className="font-medium text-slate-200">
+                  {selectedApu.unidadSalida.toUpperCase()}
+                </span>
+              </p>
+              <p className="mt-3 text-sm text-slate-400">
+                Recursos involucrados:{' '}
+                <span className="font-medium text-slate-200">
+                  {selectedApu.items.length}
+                </span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div
+          className="lg:col-span-8 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl"
+          data-tour="apu-details"
+        >
+          <h3 className="text-lg font-semibold text-slate-100">
+            Desglose de costos
+          </h3>
+          {!selectedApu ? (
+            <p className="text-sm text-slate-400">Selecciona un APU.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3">
+                <span className="text-sm text-slate-300">
+                  Costo unitario directo
+                </span>
+                <span className="text-lg font-semibold text-sky-400">
+                  {fmt(cost?.unit ?? 0)}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {cost?.desglose.length ? (
+                  cost.desglose.map((item) => (
+                    <div
+                      key={item.nombre}
+                      className="flex items-center justify-between rounded-xl border border-slate-800 px-4 py-2 text-sm text-slate-300"
+                    >
+                      <span>{item.nombre}</span>
+                      <span className="font-medium text-slate-100">
+                        {fmt(item.costo)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-400">
+                    No hay datos para este APU.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4" data-tour="apu-resources">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-100">
+            Catálogo de recursos
+          </h3>
+          <p className="text-sm text-slate-400">
+            Edita las tarifas para recalcular los costos en tiempo real.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Object.values(resources).map((resource) => (
+            <div
+              key={resource.id}
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow"
+            >
+              <div className="text-sm font-medium text-slate-200">
+                {resource.nombre}
+              </div>
+              <div className="text-xs text-slate-400">
+                {resource.tipo} - {resource.unidad}
+              </div>
+              <div className="mt-2 text-lg font-semibold text-slate-100">
+                {fmt(resource.precio)}
+              </div>
+              <label className="mt-3 block text-xs text-slate-400">
+                Ajustar precio
+              </label>
+              <input
+                type="number"
+                min={0}
+                step="1"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                value={resource.precio}
+                onChange={(event) =>
+                  updateResourcePrice(resource.id, Number(event.target.value))
+                }
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BudgetTab: React.FC<{
+  rowsView: BudgetRowView[];
+  onAddRow: () => void;
+  onUpdateRow: (id: string, patch: { apuId?: string; metrados?: number }) => void;
+  onDeleteRow: (id: string) => void;
+  templates: ReturnType<typeof useTemplates>['templates'];
+  onSaveTemplate: () => void;
+  onLoadTemplate: (key: string) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  totals: ReturnType<typeof calculateBudgetTotals>;
+  financialParams: FinancialParams;
+  onChangeParams: (key: keyof FinancialParams, value: number) => void;
+  onOpenExport: () => void;
+  onOpenImport: () => void;
+  onSaveVersion: () => void;
+  lastSync: number;
+  isSyncing: boolean;
+  syncError: string | null;
+  onSyncData: () => void;
+  onClearOffline: () => void;
+}> = ({
+  rowsView,
+  onAddRow,
+  onUpdateRow,
+  onDeleteRow,
+  templates,
+  onSaveTemplate,
+  onLoadTemplate,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  totals,
+  financialParams,
+  onChangeParams,
+  onOpenExport,
+  onOpenImport,
+  onSaveVersion,
+  lastSync,
+  isSyncing,
+  syncError,
+  onSyncData,
+  onClearOffline,
+}) => {
+  return (
+    <div className="space-y-6" data-tour="budget-table">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={onAddRow}
+            className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500"
+          >
+            Añadir partida
+          </button>
+          <button
+            onClick={onOpenImport}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white"
+          >
+            Importar CSV
+          </button>
+          <button
+            onClick={onOpenExport}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white"
+          >
+            Exportar…
+          </button>
+          <button
+            onClick={onSaveVersion}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white"
+          >
+            Guardar versión
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 text-sm text-slate-300">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="rounded-xl border border-slate-700 px-3 py-1.5 disabled:opacity-50"
+          >
+            Deshacer
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="rounded-xl border border-slate-700 px-3 py-1.5 disabled:opacity-50"
+          >
+            Rehacer
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl">
+        <table className="min-w-full divide-y divide-slate-800 text-sm">
+          <thead className="bg-slate-800/70 text-xs uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="px-4 py-3 text-left">Código</th>
+              <th className="px-4 py-3 text-left">Descripción</th>
+              <th className="px-4 py-3 text-left">Unidad</th>
+              <th className="px-4 py-3 text-right">Metrado</th>
+              <th className="px-4 py-3 text-right">Unitario</th>
+              <th className="px-4 py-3 text-right">Total</th>
+              <th className="px-4 py-3 text-center">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800 text-slate-200">
+            {rowsView.length === 0 && (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-6 text-center text-sm text-slate-400"
+                >
+                  No hay partidas en el presupuesto. Añade una para comenzar.
+                </td>
+              </tr>
+            )}
+            {rowsView.map((row) => (
+              <tr key={row.id} className="hover:bg-slate-800/60">
+                <td className="px-4 py-3 align-top">
+                  <select
+                    value={row.apu?.id ?? ''}
+                    onChange={(event) =>
+                      onUpdateRow(row.id, { apuId: event.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  >
+                    {apus.map((apu) => (
+                      <option key={apu.id} value={apu.id}>
+                        {apu.codigo}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-4 py-3 align-top text-slate-300">
+                  {row.apu?.descripcion ?? '—'}
+                </td>
+                <td className="px-4 py-3 align-top text-slate-300">
+                  {row.apu?.unidadSalida ?? '—'}
+                </td>
+                <td className="px-4 py-3 align-top text-right">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="w-24 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-right focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    value={row.metrados}
+                    onChange={(event) =>
+                      onUpdateRow(row.id, {
+                        metrados: Number(event.target.value),
+                      })
+                    }
+                  />
+                </td>
+                <td className="px-4 py-3 align-top text-right text-slate-200">
+                  {fmt(row.unitCost)}
+                </td>
+                <td className="px-4 py-3 align-top text-right font-semibold text-slate-100">
+                  {fmt(row.totalDirect)}
+                </td>
+                <td className="px-4 py-3 align-top text-center">
+                  <button
+                    onClick={() => onDeleteRow(row.id)}
+                    className="rounded-lg border border-red-500/40 px-3 py-1 text-xs text-red-300 transition hover:border-red-400 hover:text-red-200"
+                  >
+                    Eliminar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-12">
+        <div className="md:col-span-6 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+          <h3 className="text-lg font-semibold text-slate-100">
+            Plantillas de presupuesto
+          </h3>
+          <p className="mt-2 text-sm text-slate-400">
+            Guarda o reutiliza combinaciones frecuentes de partidas.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={onSaveTemplate}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-slate-500 hover:text-white"
+            >
+              Guardar plantilla actual
+            </button>
+            <select
+              onChange={(event) => {
+                if (event.target.value) {
+                  onLoadTemplate(event.target.value);
+                  event.target.value = '';
+                }
+              }}
+              defaultValue=""
+              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="" disabled>
+                Cargar plantilla…
+              </option>
+              {Object.entries(templates).map(([key, template]) => (
+                <option key={key} value={key}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="md:col-span-6 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+          <h3 className="text-lg font-semibold text-slate-100">
+            Parámetros financieros
+          </h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {(
+              [
+                { key: 'gg', label: 'G.G. (%)' },
+                { key: 'util', label: 'Utilidad (%)' },
+                { key: 'iva', label: 'IVA (%)' },
+              ] as const
+            ).map(({ key, label }) => (
+              <label key={key} className="text-xs text-slate-300">
+                {label}
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={Number((financialParams[key] || 0) * 100).toFixed(1)}
+                  onChange={(event) =>
+                    onChangeParams(key, Number(event.target.value) / 100)
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-2 text-sm text-slate-300">
+            <div className="flex items-center justify-between">
+              <span>Costo directo</span>
+              <span className="font-medium text-slate-100">
+                {fmt(totals.sumDirecto)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Gastos generales</span>
+              <span className="text-slate-200">{fmt(totals.bGG)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Sub-total</span>
+              <span className="text-slate-200">{fmt(totals.bSub1)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Utilidad</span>
+              <span className="text-slate-200">{fmt(totals.bUtil)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Total antes de IVA</span>
+              <span className="font-medium text-slate-100">
+                {fmt(totals.bSubtotal)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>IVA</span>
+              <span className="text-slate-200">{fmt(totals.bIVA)}</span>
+            </div>
+            <div className="flex items-center justify-between text-base font-semibold text-slate-100">
+              <span>Total presupuesto</span>
+              <span>{fmt(totals.bTotal)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <OfflineDataManager
+        lastSync={lastSync}
+        isLoading={isSyncing}
+        error={syncError ?? null}
+        onSync={onSyncData}
+        onClearData={onClearOffline}
+      />
+    </div>
+  );
+};
+
+const CoreApp: React.FC = () => {
+  const [tab, setTab] = useState<TabType>('apu');
+  const [selectedApuId, setSelectedApuId] = useState<string>(apus[0]?.id ?? '');
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [showCollab, setShowCollab] = useState(false);
+  const [lastSync, setLastSync] = useState<number>(() => {
+    const stored = localStorage.getItem('apu-last-sync');
+    return stored ? Number(stored) : 0;
+  });
+
+  const isOnline = useOnlineStatus();
+  const { announce, AnnouncementRegion } = useScreenReaderAnnouncements();
+  const collab = useCollab();
+
+  const { resources, updateResourcePrice } = useResources();
+  const {
+    rows,
+    addRow,
+    updateRow,
+    deleteRow,
+    replaceRows,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useBudget();
+  const { templates, saveTemplate, loadTemplate } = useTemplates();
+  const {
+    notifications,
+    showNotification,
+    dismissNotification,
+  } = useNotifications();
+  const {
+    params: financialParams,
+    setGG,
+    setUtil,
+    setIva,
+  } = useFinancialValidation({ gg: 0.18, util: 0.2, iva: 0.19 });
+  const { isExporting, exportProgress, exportToCSV, exportToJSON, exportToHTML } =
+    useAdvancedExport();
+
+  const totals = useMemo(
+    () => calculateBudgetTotals(rows, apus, resources, financialParams),
+    [rows, resources, financialParams]
+  );
+
+  const rowsView = useMemo<BudgetRowView[]>(() => {
+    return rows.map((row) => {
+      const apu = apusIndex[row.apuId];
+      if (!apu) {
+        return {
+          id: row.id,
+          apu: undefined,
+          metrados: row.metrados,
+          unitCost: 0,
+          totalDirect: 0,
+        };
+      }
+      const cost = unitCost(apu, resources, apusIndex).unit;
+      return {
+        id: row.id,
+        apu,
+        metrados: row.metrados,
+        unitCost: cost,
+        totalDirect: cost * (row.metrados || 0),
+      };
+    });
+  }, [rows, resources]);
+
+  const prepareExportData = useCallback(
+    () => ({
+      apus,
+      resources,
+      budgetItems: rows.map((row) => {
+        const apu = apusIndex[row.apuId];
+        const cost = apu ? unitCost(apu, resources, apusIndex).unit : 0;
+        return {
+          apuId: row.apuId,
+          cantidad: row.metrados,
+          precioUnitario: cost,
+          precioTotal: cost * (row.metrados || 0),
+        };
+      }),
+      totals,
+      financialParams,
+      metadata: {
+        exportDate: new Date().toISOString(),
+        appVersion: '2.0.0',
+        user: 'Usuario',
+      },
+    }),
+    [rows, resources, totals, financialParams]
+  );
+
+  const handleAdvancedExport = useCallback(
+    async (options: ExportOptions) => {
+      try {
+        const data = prepareExportData();
+
+        switch (options.format) {
+          case 'csv':
+            await exportToCSV(data, options);
+            break;
+          case 'json':
+            await exportToJSON(data, options);
+            break;
+          case 'html':
+            await exportToHTML(data, options);
+            break;
+          default:
+            showNotification('Formato no soportado aún', 'info');
+            return;
+        }
+
+        collab.addActivity('export', `Exportó presupuesto (${options.format})`);
+        showNotification('Exportación completada', 'success');
+        announce(`Presupuesto exportado como ${options.format}`);
+        setShowExportDialog(false);
+      } catch (error) {
+        console.error(error);
+        showNotification('Error al exportar', 'error');
+        announce('Error al exportar el presupuesto', 'assertive');
+      }
+    },
+    [
+      announce,
+      collab,
+      exportToCSV,
+      exportToHTML,
+      exportToJSON,
+      prepareExportData,
+      showNotification,
+    ]
+  );
+
+  const handleSaveTemplate = useCallback(() => {
+    const name = window.prompt('Nombre de la plantilla');
+    if (!name) return;
+    const result = saveTemplate(name, rows);
+    showNotification(result.message, result.success ? 'success' : 'error');
+    if (result.success) {
+      collab.addActivity('update', `Guardó plantilla "${name}"`);
+      announce(`Plantilla ${name} guardada`);
+    }
+  }, [rows, saveTemplate, showNotification, collab, announce]);
+
+  const handleLoadTemplate = useCallback(
+    (key: string) => {
+      const newRows = loadTemplate(key);
+      if (!newRows) {
+        showNotification('No se pudo cargar la plantilla', 'error');
+        return;
+      }
+      replaceRows(newRows);
+      const templateName = templates[key]?.name ?? key;
+      collab.addActivity('update', `Cargó plantilla "${templateName}"`);
+      showNotification(`Plantilla "${templateName}" cargada`, 'success');
+      announce(`Plantilla ${templateName} aplicada`);
+    },
+    [loadTemplate, replaceRows, templates, showNotification, collab, announce]
+  );
+
+  const handleSyncData = useCallback(() => {
+    const timestamp = Date.now();
+    localStorage.setItem('apu-last-sync', String(timestamp));
+    setLastSync(timestamp);
+    showNotification('Datos sincronizados localmente', 'success');
+    collab.addActivity('update', 'Sincronizó datos offline');
+  }, [showNotification, collab]);
+
+  const handleClearOffline = useCallback(() => {
+    localStorage.removeItem('apu-budget');
+    replaceRows([]);
+    showNotification('Datos offline eliminados', 'info');
+    collab.addActivity('delete', 'Limpió datos offline');
+    announce('Los datos offline fueron eliminados');
+  }, [replaceRows, showNotification, collab, announce]);
+
+  const handleSaveVersion = useCallback(() => {
+    const snapshot = {
+      rows,
+      financialParams,
+      totals,
+      timestamp: Date.now(),
+    };
+    collab.addVersion(
+      `Versión ${new Date().toLocaleString('es-CL')}`,
+      snapshot
+    );
+    showNotification('Versión guardada', 'success');
+  }, [rows, financialParams, totals, collab, showNotification]);
+
+  useRegisterShortcuts(
+    'General',
+    [
+      {
+        key: '1',
+        ctrlKey: true,
+        description: 'Cambiar a pestaña APU',
+        action: () => setTab('apu'),
+      },
+      {
+        key: '2',
+        ctrlKey: true,
+        description: 'Cambiar a pestaña Presupuesto',
+        action: () => setTab('presupuesto'),
+      },
+      {
+        key: '3',
+        ctrlKey: true,
+        description: 'Cambiar a pestaña Proyectos',
+        action: () => setTab('projects'),
+      },
+      commonShortcuts.help(() => setShowShortcutHelp(true)),
+      commonShortcuts.escape(() => setShowShortcutHelp(false)),
+      ...(tab === 'presupuesto'
+        ? [
+            commonShortcuts.save(() => setShowExportDialog(true)),
+            commonShortcuts.newItem(onAddRowHandler),
+          ]
+        : []),
+    ],
+    true
+  );
+
+  function onAddRowHandler() {
+    addRow();
+    collab.addActivity('create', 'Añadió una partida');
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100">
+      <SkipLink href="#main-content">Saltar al contenido principal</SkipLink>
+      <SkipLink href="#navigation">Saltar a navegación</SkipLink>
+
+      <AnnouncementRegion />
+      <OfflineBanner />
+      <ConnectionStatus />
+
+      <NotificationToast notifications={notifications} onDismiss={dismissNotification} />
+
+      <CollabSidebar isOpen={showCollab} onClose={() => setShowCollab(false)} />
+      <ShortcutHelpModal
+        isOpen={showShortcutHelp}
+        onClose={() => setShowShortcutHelp(false)}
+      />
+      <HelpPanel />
+      <ExportDialog
+        isOpen={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+        onExport={handleAdvancedExport}
+        isExporting={isExporting}
+        exportProgress={exportProgress}
+      />
+      <CsvImportDialog
+        isOpen={showCsvImport}
+        onClose={() => setShowCsvImport(false)}
+        apusCatalog={apus.map(({ id, codigo, descripcion, unidadSalida }) => ({
+          id,
+          codigo,
+          descripcion,
+          unidadSalida,
+        }))}
+        onImport={(importedRows) => {
+          if (!importedRows.length) return;
+          replaceRows(
+            importedRows.map((row) => ({
+              id: row.apuId + '-' + Math.random().toString(36).slice(2, 6),
+              apuId: row.apuId,
+              metrados: row.metrados,
+            }))
+          );
+          setShowCsvImport(false);
+          showNotification(
+            `Importadas ${importedRows.length} partidas desde CSV`,
+            'success'
+          );
+          collab.addActivity(
+            'import',
+            `Importó ${importedRows.length} partidas desde CSV`
+          );
+        }}
+      />
+
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+        <AppHeader tab={tab} />
+
+        <div
+          id="navigation"
+          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <TabSwitcher activeTab={tab} onTabChange={(next) => setTab(next)} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ThemeToggle className="text-sm" />
+            <button
+              onClick={() => setShowShortcutHelp(true)}
+              className="rounded-xl border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:text-white"
+              title="Atajos de teclado (F1)"
+              data-tour="shortcuts"
+            >
+              Ver atajos (F1)
+            </button>
+            <button
+              onClick={() => setShowCollab((prev) => !prev)}
+              className="rounded-xl border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:text-white"
+            >
+              Colaboración
+            </button>
+          </div>
+        </div>
+
+        <LandmarkRegion role="main" ariaLabel="Contenido principal">
+          <section id="main-content" className="space-y-6">
+            {tab === 'apu' && (
+              <ApuTab
+                selectedApuId={selectedApuId}
+                onSelect={setSelectedApuId}
+                resources={resources}
+                updateResourcePrice={updateResourcePrice}
+              />
+            )}
+            {tab === 'presupuesto' && (
+              <BudgetTab
+                rowsView={rowsView}
+                onAddRow={onAddRowHandler}
+                onUpdateRow={updateRow}
+                onDeleteRow={deleteRow}
+                templates={templates}
+                onSaveTemplate={handleSaveTemplate}
+                onLoadTemplate={handleLoadTemplate}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                onUndo={undo}
+                onRedo={redo}
+                totals={totals}
+                financialParams={financialParams}
+                onChangeParams={(key, value) => {
+                  if (key === 'gg') setGG(value);
+                  if (key === 'util') setUtil(value);
+                  if (key === 'iva') setIva(value);
+                }}
+                onOpenExport={() => setShowExportDialog(true)}
+                onOpenImport={() => setShowCsvImport(true)}
+                onSaveVersion={handleSaveVersion}
+                lastSync={lastSync}
+                isSyncing={!isOnline}
+                syncError={isOnline ? null : 'Sin conexión'}
+                onSyncData={handleSyncData}
+                onClearOffline={handleClearOffline}
+              />
+            )}
+            {tab === 'projects' && <ProjectManager />}
+          </section>
+        </LandmarkRegion>
+      </div>
+    </div>
+  );
+};
+
+const AppModular: React.FC = () => {
+  return (
+    <ProjectManagerProvider>
+      <CollabProvider>
+        <HelpProvider>
+          <CoreApp />
+        </HelpProvider>
+      </CollabProvider>
+    </ProjectManagerProvider>
+  );
+};
+
+export default AppModular;
+
