@@ -4,7 +4,7 @@ import BudgetTable from "./components/BudgetTable";
 import GlitchText from "./components/GlitchText";
 // Vista previa de logo desde el pack proporcionado (bundled por Vite)
 // Puedes cambiar a mono_light-icon-256.png, mono_teal-icon-256.png u original_cutout-icon-256.png
-import logoMark from "../presupuestos_logo_pack/mono_dark-icon-256.png";
+import logoMark from "../presupuestos_logo_pack/original_cutout-icon-256.png";
 const normUnit = (u:string) => u.replace("²","2").replace("³","3").toLowerCase();
 const clamp0 = (n:number) => Math.max(0, Number.isFinite(n)? n: 0);
 const uid = () => Math.random().toString(36).slice(2,9);
