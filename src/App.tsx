@@ -599,7 +599,7 @@ export default function App(){
           {/* Encabezado con efecto glitch + logo */}
           <div className="flex-1">
             <div className="flex items-center gap-3">
-              <img src={logoMark} alt="Logo Presupuestos" className="h-10 w-10 rounded-lg shadow-sm" />
+              <img src={logoMark} alt="Logo Presupuestos" className="h-9 w-9 sm:h-10 sm:w-10 rounded-lg shadow-sm object-contain" />
             {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
             {/* @ts-ignore */}
             {/* GlitchText acepta children como texto a reflejar en data-text */}
