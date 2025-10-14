@@ -1,51 +1,108 @@
-# APU Presupuestos Monorepo (WIP)
+# APU Presupuestos (Vite + React + TS + Tailwind)
 
-Esta aplicación se construirá por iteraciones rápidas siguiendo la referencia visual entregada. La meta final incluye:
-- Frontend React + Vite + Tailwind + TypeScript.
-- Backend Node + Express + Prisma (SQLite).
-- Pruebas con Vitest y pipeline de lint/format con ESLint + Prettier.
+Aplicación de gestión de APU y presupuestos de construcción. Stack: Vite + React 18 + TypeScript + Tailwind.
 
-## Estructura actual
+## Estructura del proyecto
 
 ```
 .
-├─ api/         # Backend Express (pendiente de implementación)
-└─ frontend/    # Frontend React (pendiente de implementación)
+├─ public/
+├─ src/
+│  ├─ App.tsx
+│  ├─ main.tsx
+│  └─ index.css
+├─ package.json
+├─ tsconfig.json
+├─ tailwind.config.js
+├─ postcss.config.js
+└─ vite.config.ts
 ```
 
-## Prerrequisitos generales
+## Requisitos
 
 - Node.js >= 20
-- pnpm o npm (usa el que prefieras, los ejemplos usan `npm`)
+- npm (o pnpm/yarn si prefieres; aquí usamos npm)
 
-## Pasos iniciales
+## Scripts
 
-1. **Instalar dependencias**
-   ```bash
-   npm install --prefix api
-   npm install --prefix frontend
-   ```
+```bash
+# Desarrollo con hot reload
+npm run dev
 
-2. **Scripts disponibles**
+# Build de producción
+npm run build
 
-   | Ubicación | Comando | Descripción |
-   |-----------|---------|-------------|
-   | `frontend` | `npm run dev` | Arrancará Vite (pendiente de implementación de UI). |
-   | `frontend` | `npm run build` | Empaqueta el frontend. |
-   | `frontend` | `npm run test` | Ejecutará Vitest. |
-   | `frontend` | `npm run lint` | Lint con ESLint. |
-   | `frontend` | `npm run format` | Formatea con Prettier. |
-   | `api` | `npm run dev` | Arrancará el servidor Express con recarga (lógica pendiente). |
-   | `api` | `npm run build` | Compila TypeScript del backend. |
-   | `api` | `npm run start` | Levanta el build compilado. |
-   | `api` | `npm run test` | Ejecutará pruebas del backend. |
-   | `api` | `npm run lint` | Lint del backend. |
-   | `api` | `npm run format` | Formateo del backend. |
+# Pre-visualización del build
+npm run preview
+```
 
-## Próximos pasos
+## Desarrollo local
 
-- Definir tsconfig, eslint y configuración de Tailwind / Vite.
-- Implementar vistas iniciales siguiendo las capturas de referencia.
-- Levantar API básica con endpoint `/health` y configurar Prisma.
+```bash
+npm ci             # o npm install
+npm run dev        # abre http://localhost:5173
+```
 
-> Cada iteración aportará el mínimo cambio viable para evitar timeouts, según las reglas acordadas.
+## Despliegue
+
+La app está preparada para GitHub Pages. Se usan dos flujos: el “oficial” con Actions (recomendado para producción) y uno alternativo vía rama `gh-pages` (útil para demos desde features).
+
+### A) GitHub Pages (oficial con Actions)
+
+- Workflow: `.github/workflows/deploy-pages.yml`
+- Características:
+   - Construye con `npm ci` y `vite build --base=/pres/`.
+   - Copia `dist/index.html` a `dist/404.html` para fallback SPA.
+   - Publica usando `actions/deploy-pages` (entorno `github-pages`).
+   - Regla: despliega solo desde `main`.
+
+Pasos en el repo:
+1) Settings → Pages → Build and deployment → Source: “GitHub Actions”.
+2) Hacer merge a `main`. El workflow construye y publica automáticamente.
+3) URL: `https://<usuario>.github.io/pres/`
+
+Notas:
+- El parámetro `--base=/pres/` es necesario porque el nombre del repo es `pres`.
+- Si sale “Branch 'X' is not allowed to deploy…”, el environment `github-pages` está protegido para `main`.
+
+### B) gh-pages (alternativo para demos)
+
+- Workflow: `.github/workflows/deploy-gh-pages.yml`
+- Características:
+   - Construye con `npm ci` y `vite build --base=/pres/`.
+   - Copia `dist/index.html` a `dist/404.html` (SPA).
+   - Publica `./dist` a la rama `gh-pages` con `peaceiris/actions-gh-pages`.
+   - Puede dispararse en `main` y/o en ramas de feature.
+
+Pasos en el repo:
+1) Settings → Pages → Build and deployment → Source: “Deploy from a branch”.
+2) Branch: `gh-pages`, Folder: `/` (root) → Guardar.
+3) Al hacer push, el workflow publica en `gh-pages` y queda disponible en `https://<usuario>.github.io/pres/`.
+
+### Cambiar entre flujos
+
+- Para producción estable: usar flujo A (Actions) y dejar Pages en “GitHub Actions”.
+- Para demos rápidas desde features: usar flujo B (gh-pages) y dejar Pages en “Deploy from a branch: gh-pages”.
+- Evita tener ambos activos a la vez para no confundir el origen de la publicación.
+
+## Buenas prácticas del repo
+
+- `dist/` no se versiona (está en `.gitignore`).
+- El build lo genera CI en cada despliegue.
+
+## Troubleshooting
+
+- 404 al desplegar: confirma `--base=/pres/` y que existe `dist/404.html`.
+- “Failed to create deployment (404)”: habilita Pages en Settings → Pages.
+- “Branch 'X' is not allowed to deploy…”: el environment `github-pages` solo permite `main`. Usa gh-pages o mergea a `main`.
+- Activos sin estilo/ruta rota en producción: revisa que Pages apunte al origen correcto (Actions vs gh-pages) y el `base` de Vite.
+
+## Notas de dominio (resumen)
+
+- APU y Presupuestos con precios en CLP, formato chileno.
+- Recursos estáticos, APUs con secciones A–D y extras, cálculo unitario coherente.
+- Seeding incluido: “APU vacío (ejemplo)” y estructura mínima de presupuesto; botón “Ejemplo (APU vacío)”.
+
+---
+
+Licencia: MIT (o la que definas).
