@@ -592,7 +592,7 @@ export default function App(){
 
       <div className="max-w-6xl mx-auto grid gap-6">
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Presupuestos con APU · MVP</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">PRESUPUESTOS</h1>
           <div className="flex flex-wrap items-center gap-2">
             {tab === 'presupuesto' && (
               <button onClick={()=>{
