@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import BudgetTable from "./components/BudgetTable";
+import GlitchText from "./components/GlitchText";
 const normUnit = (u:string) => u.replace("²","2").replace("³","3").toLowerCase();
 const clamp0 = (n:number) => Math.max(0, Number.isFinite(n)? n: 0);
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -592,7 +593,15 @@ export default function App(){
 
       <div className="max-w-6xl mx-auto grid gap-6">
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">PRESUPUESTOS</h1>
+          {/* Encabezado con efecto glitch - solicitado por el usuario */}
+          <div className="flex-1">
+            {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+            {/* @ts-ignore */}
+            {/* GlitchText acepta children como texto a reflejar en data-text */}
+            <GlitchText speed={1} enableShadows enableOnHover={false} className="leading-none">
+              PRESUPUESTO
+            </GlitchText>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {tab === 'presupuesto' && (
               <button onClick={()=>{

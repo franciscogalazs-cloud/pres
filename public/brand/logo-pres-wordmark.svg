@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="640" height="160" viewBox="0 0 640 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PRESUPUESTOS - Wordmark">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="160" rx="20" fill="#0f172a"/>
+  <g transform="translate(32,112)" fill="#e5e7eb">
+    <path d="M0-72H44c20 0 36 16 36 36S64 0 44 0H0v-16h40c11 0 20-13 20-20S51-40 40-40H0v-32z"/>
+    <path d="M104-72H184v16h-64v16h52v16h-52v8h64V0h-80v-72z"/>
+    <path d="M208-72h88v16h-72v16h64v16h-64V0h-16v-72z"/>
+    <path d="M316-72h94v16h-78v16h70v16h-70V0h-16v-72z"/>
+  </g>
+  <circle cx="560" cy="80" r="12" fill="url(#accent)"/>
+</svg>

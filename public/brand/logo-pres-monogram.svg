@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PRESUPUESTOS - Monograma PR">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Disco -->
+  <circle cx="128" cy="128" r="112" fill="url(#bg)" stroke="#334155" stroke-width="2"/>
+
+  <!-- Monograma PR -->
+  <g fill="none" stroke="url(#accent)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 76 v104"/>
+    <path d="M88 76 h56 a28 28 0 0 1 0 56 h-56"/>
+    <path d="M144 132 l40 48"/>
+  </g>
+</svg>
