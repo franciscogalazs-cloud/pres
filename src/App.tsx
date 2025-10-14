@@ -598,8 +598,8 @@ export default function App(){
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           {/* Encabezado con efecto glitch + logo */}
           <div className="flex-1">
-            <div className="flex items-center gap-4">
-              <img src={logoMark} alt="Logo Presupuestos" className="h-[72px] w-[72px] sm:h-[80px] sm:w-[80px] rounded-lg shadow-sm object-contain" />
+            <div className="flex items-center gap-5">
+              <img src={logoMark} alt="Logo Presupuestos" className="h-[180px] w-[180px] sm:h-[200px] sm:w-[200px] rounded-xl shadow-sm object-contain" />
             {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
             {/* @ts-ignore */}
             {/* GlitchText acepta children como texto a reflejar en data-text */}
