@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="720" height="300" viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo Presupuestos - Lockup">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e6e0d6"/>
+      <stop offset="100%" stop-color="#b2a99e"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#756d63"/>
+      <stop offset="100%" stop-color="#4b463f"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Marca a la izquierda -->
+  <g transform="translate(110,150)">
+    <!-- Engranaje -->
+    <g id="gear">
+      <circle r="64" fill="url(#metal)"/>
+      <circle r="52" fill="#111827"/>
+      <g id="tooth" transform="translate(0,-78)">
+        <rect x="-6" y="0" width="12" height="14" rx="2" fill="url(#metal)"/>
+      </g>
+      <use href="#tooth" transform="rotate(22.5)"/>
+      <use href="#tooth" transform="rotate(45)"/>
+      <use href="#tooth" transform="rotate(67.5)"/>
+      <use href="#tooth" transform="rotate(90)"/>
+      <use href="#tooth" transform="rotate(112.5)"/>
+      <use href="#tooth" transform="rotate(135)"/>
+      <use href="#tooth" transform="rotate(157.5)"/>
+      <use href="#tooth" transform="rotate(180)"/>
+      <use href="#tooth" transform="rotate(202.5)"/>
+      <use href="#tooth" transform="rotate(225)"/>
+      <use href="#tooth" transform="rotate(247.5)"/>
+      <use href="#tooth" transform="rotate(270)"/>
+      <use href="#tooth" transform="rotate(292.5)"/>
+      <use href="#tooth" transform="rotate(315)"/>
+      <use href="#tooth" transform="rotate(337.5)"/>
+    </g>
+
+    <!-- Excavadora -->
+    <g id="excavator" transform="translate(-6,0)">
+      <!-- Orugas -->
+      <rect x="-42" y="24" width="84" height="14" rx="7" fill="url(#shadow)"/>
+      <g fill="#22262e">
+        <rect x="-36" y="34" width="12" height="5" rx="2"/>
+        <rect x="-18" y="34" width="12" height="5" rx="2"/>
+        <rect x="0" y="34" width="12" height="5" rx="2"/>
+        <rect x="18" y="34" width="12" height="5" rx="2"/>
+      </g>
+      <!-- Cabina -->
+      <rect x="-26" y="-6" width="48" height="28" rx="6" fill="url(#metal)"/>
+      <rect x="-20" y="-2" width="20" height="14" rx="3" fill="#0b0f1a"/>
+      <!-- Brazo -->
+      <g fill="url(#metal)">
+        <rect x="18" y="-18" width="10" height="26" rx="4"/>
+        <rect x="26" y="-24" width="10" height="30" rx="3" transform="rotate(-16 28 -10)"/>
+      </g>
+      <!-- Pluma y balde -->
+      <g fill="url(#metal)" transform="translate(48,-18)">
+        <rect x="0" y="-4" width="32" height="10" rx="4" transform="rotate(20)"/>
+        <path d="M36,8 l14,12 c5,4 -1,12 -8,10 l-20,-10 z" fill="url(#metal)"/>
+        <g fill="#9a9186">
+          <rect x="42" y="26" width="3" height="6" rx="1"/>
+          <rect x="46" y="28" width="3" height="6" rx="1"/>
+          <rect x="50" y="30" width="3" height="6" rx="1"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Wordmark a la derecha -->
+  <g transform="translate(240,120)" fill="#e6e0d6">
+    <text x="0" y="0" font-family="'Inter', system-ui, sans-serif" font-weight="900" font-size="72" letter-spacing="2">PRESUPUESTOS</text>
+    <text x="4" y="36" font-family="'Inter', system-ui, sans-serif" font-weight="700" font-size="18" letter-spacing="7" opacity=".9">PARA LA CONSTRUCCIÓN</text>
+  </g>
+</svg>
