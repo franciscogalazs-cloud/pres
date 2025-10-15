@@ -82,7 +82,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
           <button
             aria-label="Eliminar partida"
             onClick={() => { if (!confirm('¿Eliminar esta partida completa?')) return; onDelete(row.id); }}
-            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"
           >
             <TrashIcon className="h-4 w-4"/>
           </button>
@@ -126,7 +126,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                           onUpdateRow(row.id, { apuIds: [], apuId: '' });
                         }
                       }}
-                      className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                      className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30"
                       title="Quitar APU de la partida"
                       aria-label="Quitar APU de la partida"
                     >
@@ -253,7 +253,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                     aria-label="Eliminar subpartida"
                     title="Eliminar subpartida"
                     onClick={() => { if (!confirm('¿Eliminar esta subpartida?')) return; onRemoveSubRow(row.id, sid); }}
-                    className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                    className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"
                   >
                     <TrashIcon className="h-4 w-4"/>
                   </button>
@@ -284,7 +284,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                                 const next = sIds.filter(x => x !== id);
                                 onUpdateSubRow && onUpdateSubRow(row.id, sid, { apuIds: next });
                               }}
-                              className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                              className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30"
                               title="Quitar APU de la subpartida"
                               aria-label="Quitar APU de la subpartida"
                             >
