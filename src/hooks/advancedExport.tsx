@@ -70,13 +70,13 @@ export const useAdvancedExport = () => {
       setExportProgress(25);
 
       // Budget items
-      csvContent += 'Código,Descripción,Unidad,Cantidad,Precio Unitario,Precio Total\n';
+  csvContent += 'APU,Descripción,Unidad,Cantidad,Precio Unitario,Precio Total\n';
       
       data.budgetItems.forEach((item: any) => {
         const apu = data.apus.find(a => a.id === item.apuId);
         if (apu) {
           const unidad = (apu as any).unidadSalida || '';
-          csvContent += `"${apu.codigo}","${apu.descripcion}","${unidad}",${item.cantidad},${item.precioUnitario || 0},${item.precioTotal || 0}\n`;
+          csvContent += `"${apu.id || ''}","${apu.descripcion}","${unidad}",${item.cantidad},${item.precioUnitario || 0},${item.precioTotal || 0}\n`;
         }
       });
       
@@ -372,7 +372,7 @@ export const useAdvancedExport = () => {
         <table class="table">
           <thead>
             <tr>
-              <th>Código</th>
+              <th>APU</th>
               <th>Descripción</th>
               <th>Unidad</th>
               <th>Cantidad</th>
@@ -387,7 +387,7 @@ export const useAdvancedExport = () => {
         if (apu) {
           htmlContent += `
             <tr>
-              <td>${apu.codigo}</td>
+              <td>${apu.id}</td>
               <td>${apu.descripcion}</td>
               <td>${(apu as any).unidadSalida || ''}</td>
               <td>${(item.cantidad ?? 0).toLocaleString('es-CL')}</td>
@@ -434,7 +434,7 @@ export const useAdvancedExport = () => {
               const c = typeof it.coef === 'number' ? it.coef : (it.rendimiento ? 1 / it.rendimiento : 1);
               rows += `
                 <tr>
-                  <td style="padding-left:${depth * 20}px">↳ SubAPU ${sub ? `${sub.codigo} · ${sub.descripcion}` : (it.apuRefId || '')}</td>
+                  <td style="padding-left:${depth * 20}px">↳ SubAPU ${sub ? `${sub.id} · ${sub.descripcion}` : (it.apuRefId || '')}</td>
                   <td>subapu</td>
                   <td>${it.coef ?? (it.rendimiento ? `1/${it.rendimiento}` : 1)}</td>
                   <td>-</td>
@@ -459,7 +459,7 @@ export const useAdvancedExport = () => {
           if (!apu) continue;
           htmlContent += `
             <div style="margin: 12px 0 24px;">
-              <div><strong>${apu.codigo}</strong> — ${apu.descripcion}</div>
+              <div><strong>${apu.id}</strong> — ${apu.descripcion}</div>
               <table class="table">
                 <thead>
                   <tr>

@@ -38,8 +38,7 @@ export const ReferenceLayout: React.FC = () => {
       const matchesFilter = filter === 'all' || item.owner === 'mine';
       const matchesSearch =
         search.trim().length === 0 ||
-        item.descripcion.toLowerCase().includes(search.toLowerCase()) ||
-        (item.codigoExterno ?? '').toLowerCase().includes(search.toLowerCase());
+        item.descripcion.toLowerCase().includes(search.toLowerCase());
       return matchesFilter && matchesSearch;
     });
   }, [filter, search]);
@@ -59,7 +58,6 @@ export const ReferenceLayout: React.FC = () => {
       descripcion: item.descripcion,
       unidad: item.unidad,
       precioUnitario: item.precioUnitario,
-      codigoExterno: item.codigoExterno,
     });
     setShowApuModal(true);
   };

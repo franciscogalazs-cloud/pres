@@ -5,11 +5,10 @@ interface CsvImportDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onImport: (rows: Array<{ apuId: string; metrados: number }>) => void;
-  apusCatalog: Array<{ id: string; codigo: string; descripcion: string; unidadSalida: string }>
+  apusCatalog: Array<{ id: string; descripcion: string; unidadSalida: string }>
 }
 
 type MappedRow = {
-  apuCodigo?: string;
   apuDescripcion?: string;
   apuId?: string;
   unidad?: string;
@@ -28,7 +27,7 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
   const [raw, setRaw] = useState<string>('');
   const [delimiter, setDelimiter] = useState<string>(',');
   const [headerRow, setHeaderRow] = useState<boolean>(true);
-  const [colMap, setColMap] = useState<{ codigo?: number; descripcion?: number; unidad?: number; cantidad?: number }>({});
+  const [colMap, setColMap] = useState<{ descripcion?: number; unidad?: number; cantidad?: number }>({});
   const [error, setError] = useState<string>('');
 
   const rows = useMemo(() => {
@@ -47,7 +46,6 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
 
   const mapped: MappedRow[] = useMemo(() => {
     return dataRows.map(cols => ({
-      apuCodigo: colMap.codigo != null ? cols[colMap.codigo] : undefined,
       apuDescripcion: colMap.descripcion != null ? cols[colMap.descripcion] : undefined,
       unidad: colMap.unidad != null ? cols[colMap.unidad] : undefined,
       cantidad: colMap.cantidad != null ? Number(cols[colMap.cantidad] || 0) : undefined,
@@ -55,10 +53,6 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
   }, [dataRows, colMap]);
 
   const resolveApuId = (row: MappedRow): string | undefined => {
-    if (row.apuCodigo) {
-      const found = apusCatalog.find(a => a.codigo.toLowerCase() === row.apuCodigo!.toLowerCase());
-      if (found) return found.id;
-    }
     if (row.apuDescripcion) {
       const found = apusCatalog.find(a => a.descripcion.toLowerCase() === row.apuDescripcion!.toLowerCase());
       if (found) return found.id;
@@ -126,7 +120,7 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
               <div>
                 <label className="mb-1 block text-sm font-medium">Mapeo de columnas</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {(['codigo','descripcion','unidad','cantidad'] as const).map(key => (
+                  {(['descripcion','unidad','cantidad'] as const).map(key => (
                     <div key={key} className="flex items-center gap-2">
                       <span className="w-28 text-sm capitalize">{key}</span>
                       <select 
@@ -149,7 +143,7 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
                   <table className="w-full border-collapse">
                     <thead>
                       <tr>
-                        <th className="border-b p-1 text-left">Código</th>
+                        
                         <th className="border-b p-1 text-left">Descripción</th>
                         <th className="border-b p-1 text-left">Unidad</th>
                         <th className="border-b p-1 text-right">Cantidad</th>
@@ -159,7 +153,6 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
                     <tbody>
                       {mapped.slice(0, 50).map((m, i) => (
                         <tr key={i}>
-                          <td className="border-b p-1">{m.apuCodigo || ''}</td>
                           <td className="border-b p-1">{m.apuDescripcion || ''}</td>
                           <td className="border-b p-1">{m.unidad || ''}</td>
                           <td className="border-b p-1 text-right">{m.cantidad ?? ''}</td>

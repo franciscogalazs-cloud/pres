@@ -18,7 +18,7 @@ export function unitCost(
   // Prevención de ciclos
   if (stack.has(apu.id)) {
     // Ciclo detectado: retornamos costo 0 para evitar bucle
-    return { unit: 0, desglose: [{ nombre: `Ciclo en ${apu.codigo}`, costo: 0 }] };
+    return { unit: 0, desglose: [{ nombre: `Ciclo en ${apu.id}`, costo: 0 }] };
   }
   stack.add(apu.id);
 
@@ -57,7 +57,7 @@ export function unitCost(
       // - rendimiento: unidades de salida por 1 unidad de sub-APU
       const coef = it.coef ?? (it.rendimiento ? 1 / (it.rendimiento as number) : 1);
       const costo = coef * subRes.unit;
-      desglose.push({ nombre: `SubAPU ${sub.codigo}`, costo });
+      desglose.push({ nombre: `SubAPU ${sub.id}`, costo });
       total += costo;
       continue;
     }

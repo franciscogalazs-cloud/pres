@@ -119,14 +119,9 @@ export default function App(){
   // Biblioteca: personalizados
   const loadLibrary = ()=>{ try{ return JSON.parse(localStorage.getItem('apu-library')||'[]'); }catch{ return []; } };
   const saveLibrary = (arr:any[])=>{
-    // Asignar códigos secuenciales tipo 01-001, 01-002, ... según orden actual
-    const prefix = '01';
-    const numbered = (arr||[]).map((apu:any, idx:number)=>{
-      const code = `${prefix}-${String(idx+1).padStart(3,'0')}`;
-      return { ...apu, codigoExterno: code, codigo: code };
-    });
-    try{ localStorage.setItem('apu-library', JSON.stringify(numbered)); }catch{}
-    setCustomApus(numbered);
+    // Guardar sin códigos correlativos
+    try{ localStorage.setItem('apu-library', JSON.stringify(arr||[])); }catch{}
+    setCustomApus(arr||[]);
   };
   const [customApus, setCustomApus] = useState<any[]>(loadLibrary);
   const allApus = useMemo(()=>[...customApus], [customApus]);
@@ -692,10 +687,10 @@ export default function App(){
   } as any);
 
   // Trámites (servicios globales)
-  const buildApuTramiteDom = () => ({ id: 'apu_tramite_dom_permiso', descripcion: 'Permiso de edificación y derechos DOM', unidadSalida: 'u', categoria: 'Servicios', codigoExterno: '', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Permiso DOM', unidad: 'u', cantidad: 1, pu: 700000 } ] } } as any);
-  const buildApuTramiteCalculo = () => ({ id: 'apu_tramite_calculo_estructural', descripcion: 'Cálculo estructural vivienda liviana', unidadSalida: 'u', categoria: 'Servicios', codigoExterno: '', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Cálculo estructural', unidad: 'u', cantidad: 1, pu: 600000 } ] } } as any);
-  const buildApuTramiteRecepcion = () => ({ id: 'apu_tramite_recepcion_final', descripcion: 'Recepción final, certificados y copias', unidadSalida: 'u', categoria: 'Servicios', codigoExterno: '', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Recepción final y certificados', unidad: 'u', cantidad: 1, pu: 300000 } ] } } as any);
-  const buildApuTramiteTE1 = () => ({ id: 'apu_tramite_te1_sec', descripcion: 'SEC/TE1 eléctrica', unidadSalida: 'u', categoria: 'Servicios', codigoExterno: '', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'SEC/TE1', unidad: 'u', cantidad: 1, pu: 120000 } ] } } as any);
+  const buildApuTramiteDom = () => ({ id: 'apu_tramite_dom_permiso', descripcion: 'Permiso de edificación y derechos DOM', unidadSalida: 'u', categoria: 'Servicios', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Permiso DOM', unidad: 'u', cantidad: 1, pu: 700000 } ] } } as any);
+  const buildApuTramiteCalculo = () => ({ id: 'apu_tramite_calculo_estructural', descripcion: 'Cálculo estructural vivienda liviana', unidadSalida: 'u', categoria: 'Servicios', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Cálculo estructural', unidad: 'u', cantidad: 1, pu: 600000 } ] } } as any);
+  const buildApuTramiteRecepcion = () => ({ id: 'apu_tramite_recepcion_final', descripcion: 'Recepción final, certificados y copias', unidadSalida: 'u', categoria: 'Servicios', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Recepción final y certificados', unidad: 'u', cantidad: 1, pu: 300000 } ] } } as any);
+  const buildApuTramiteTE1 = () => ({ id: 'apu_tramite_te1_sec', descripcion: 'SEC/TE1 eléctrica', unidadSalida: 'u', categoria: 'Servicios', secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'SEC/TE1', unidad: 'u', cantidad: 1, pu: 120000 } ] } } as any);
 
   const buildApuCanaletaPVC4 = () => ({
     id: 'apu_canaleta_pvc_4_instalada',
@@ -2083,8 +2078,7 @@ export default function App(){
       } catch {}
       // Asegurar orden (H-25 primero) y renumeración 01-XXX aunque no haya migración
       const shouldReorder = customApus[0]?.id !== apuId;
-      const codeOk = (arr:any[])=> (arr||[]).every(a=> /^01-\d{3}$/.test(String(a.codigo||a.codigoExterno||'')));
-      if (shouldReorder || !codeOk(customApus)) {
+      if (shouldReorder) {
         const base = customApus.map(a=> a.id===apuId ? existing : a);
         const reordered = [existing, ...base.filter(a=> a.id!==apuId)];
         saveLibrary(reordered);
@@ -2349,7 +2343,7 @@ export default function App(){
       descripcion: apu.descripcion || '',
       unidadSalida: apu.unidadSalida || '',
       categoria: (apu as any).categoria || '',
-      codigoExterno: (apu as any).codigoExterno || (apu as any).codigo || '',
+      
       secciones: sec0,
     };
     setExpandedId(id);
@@ -2427,7 +2421,7 @@ export default function App(){
     // Permitir editar cualquier APU que esté en la biblioteca actual
     const exists = allApus.find(a=>a.id===expandedId);
     if(exists){
-      const next = allApus.map(x=> x.id===expandedId? { ...x, descripcion: expandedForm.descripcion, unidadSalida: expandedForm.unidadSalida, categoria: expandedForm.categoria || '', codigoExterno: expandedForm.codigoExterno, codigo: expandedForm.codigoExterno || (x as any).codigo || 'CUST', secciones: expandedForm.secciones } : x);
+  const next = allApus.map(x=> x.id===expandedId? { ...x, descripcion: expandedForm.descripcion, unidadSalida: expandedForm.unidadSalida, categoria: expandedForm.categoria || '', secciones: expandedForm.secciones } : x);
       saveLibrary(next);
       showNotification('APU actualizado','success');
     } else {
@@ -2442,7 +2436,7 @@ export default function App(){
       showNotification('Completa descripción y unidad','error');
       return;
     }
-    const withId = { ...apu, id: 'custom_'+uid(), categoria: apu.categoria || '', codigo: apu.codigoExterno||'CUST', items: apu.items || [] };
+  const withId = { ...apu, id: 'custom_'+uid(), categoria: apu.categoria || '', items: apu.items || [] };
     const next = [...customApus, withId];
     saveLibrary(next);
     setShowCreateApu(false);
@@ -2469,7 +2463,7 @@ export default function App(){
   const handleSaveEditApu = (apu:any)=>{
     if(!apuEditing) return;
     // Actualizar APU existente (solo personalizados)
-    const next = customApus.map(x=> x.id===apuEditing.id? { ...apuEditing, ...apu, categoria: apu.categoria ?? (apuEditing as any).categoria ?? '', codigo: (apu.codigoExterno || (apuEditing as any).codigo || 'CUST') } : x);
+  const next = customApus.map(x=> x.id===apuEditing.id? { ...apuEditing, ...apu, categoria: apu.categoria ?? (apuEditing as any).categoria ?? '' } : x);
     saveLibrary(next); setShowEditApu(false); setApuEditing(null); showNotification('APU modificado','success');
   };
 
@@ -2744,7 +2738,7 @@ export default function App(){
     };
     // Utilidades de búsqueda (post-aseguramiento)
     const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
-    const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
+  const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
     const mkSub = (descr:string, unidad:string, qty:number, apuIds:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds, overrideUnitPrice, overrideTotal });
     // Asegurar y tomar ids
     const apuIds = {
@@ -2879,7 +2873,7 @@ export default function App(){
       return id;
     };
     const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
-    const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
+  const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
     const mkSub = (descr:string, unidad:string, qty:number, apuIds:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds, overrideUnitPrice, overrideTotal });
 
     const apuIds = {
@@ -3009,9 +3003,7 @@ export default function App(){
     // id exacto
     const byId = allApus.find(a=> norm(a.id)===k);
     if(byId) return byId;
-    // match por código
-    const byCode = allApus.find(a=> norm(a.codigo||a.codigoExterno||'')===k);
-    if(byCode) return byCode;
+    // sin búsqueda por código externo; usar solo id/descripcion
     // match por descripción (mejor startsWith)
     const starts = allApus.find(a=> norm(a.descripcion).startsWith(k));
     if(starts) return starts;
@@ -3125,7 +3117,7 @@ export default function App(){
               <>
               <button onClick={()=>{
                 // Export CSV (simple)
-                const header = ['Codigo','Descripcion','Unidad','Cantidad','Unitario','Directo'];
+              const header = ['APU','Descripcion','Unidad','Cantidad','Unitario','Directo'];
                 const body = rows.map(r=>{
                   const ids: string[] = (r.apuIds && r.apuIds.length) ? r.apuIds : (r.apuId ? [r.apuId] : []);
                   const uc = ids.reduce((sum:number, id:string)=>{
@@ -3134,7 +3126,7 @@ export default function App(){
                   const dir = uc * (r.metrados||0);
                   const first = ids[0] ? getApuById(ids[0]) : null;
                   return [
-                    (first?.codigo || first?.codigoExterno || first?.id || (r.codigo||'')),
+                    (first?.id || (r.codigo||'')),
                     (r.descripcion || first?.descripcion || ''),
                     (r.unidadSalida || first?.unidadSalida || ''),
                     r.metrados||0,
@@ -3361,7 +3353,7 @@ export default function App(){
                 <thead>
                   <tr className="text-left text-slate-300">
                     <th className="py-2 px-3 w-16">N°</th>
-                    <th className="py-2 px-3 w-28">Código</th>
+                    
                     <th className="py-2 px-3">Descripción</th>
                     <th className="py-2 px-3 w-32">Categoría</th>
                     <th className="py-2 px-3 w-24">Unidad</th>
@@ -3378,7 +3370,7 @@ export default function App(){
                       <React.Fragment key={a.id}>
                         <tr className="border-t border-slate-700">
                           <td className="py-2 px-3">{i+1}</td>
-                          <td className="py-2 px-3">{a.codigo || a.codigoExterno || 'CUST'}</td>
+                          
                           <td className="py-2 px-3">
                             <button onClick={()=>toggleExpandRow(a.id)} className="text-left hover:underline">
                               {a.descripcion}
@@ -3436,10 +3428,7 @@ export default function App(){
                                     <span>Categoría</span>
                                     <input className="bg-slate-900 border border-slate-700 rounded-xl p-2" value={expandedForm.categoria||''} onChange={e=>setExpandedForm((f:any)=>({...f, categoria:e.target.value}))} />
                                   </label>
-                                  <label className="text-sm text-slate-300 grid gap-1">
-                                    <span>Código Externo</span>
-                                    <input className="bg-slate-900 border border-slate-700 rounded-xl p-2" value={expandedForm.codigoExterno||''} onChange={e=>setExpandedForm((f:any)=>({...f, codigoExterno:e.target.value}))} />
-                                  </label>
+                                  
                                 </div>
                                 <div className="flex items-center justify-end">
                                   <div className="flex items-center gap-2">
@@ -3936,7 +3925,7 @@ function SelectApuModal({open, onClose, onPick, apus, onCreateNew}:{open:boolean
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-300">
-                    <th className="py-2 px-3 w-28">Código</th>
+                    
                     <th className="py-2 px-3">Descripción</th>
                     <th className="py-2 px-3 w-28">Cat.</th>
                     <th className="py-2 px-3 w-24">Unidad</th>
@@ -3946,8 +3935,8 @@ function SelectApuModal({open, onClose, onPick, apus, onCreateNew}:{open:boolean
                 <tbody>
                   {list.map((a:any)=> (
                     <tr key={a.id} className="border-t border-slate-800 hover:bg-slate-800/60">
-                      <td className="py-2 px-3">{a.codigo || a.codigoExterno || 'CUST'}</td>
-                      <td className="py-2 px-3">{a.descripcion}</td>
+                          
+                          <td className="py-2 px-3">{a.descripcion}</td>
                       <td className="py-2 px-3">{a.categoria||''}</td>
                       <td className="py-2 px-3">{a.unidadSalida}</td>
                       <td className="py-2 px-3 text-right">
@@ -4577,7 +4566,7 @@ function CreateApuModal({open, onClose, onSave, initial}:{open:boolean; onClose:
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-xl border border-red-500/40 text-red-300 hover:border-red-400">Cerrar</button>
-          <button onClick={()=>onSave({ descripcion: form.descripcion, unidadSalida: form.unidadSalida, categoria: form.categoria||'', items: [], codigoExterno: '', secciones: undefined })} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
+          <button onClick={()=>onSave({ descripcion: form.descripcion, unidadSalida: form.unidadSalida, categoria: form.categoria||'', items: [], secciones: undefined })} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
         </div>
       </div>
     </Modal>

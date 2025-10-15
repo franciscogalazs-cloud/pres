@@ -39,7 +39,6 @@ export const ApuItemSchema = z.union([ApuItemCoefSchema, ApuItemRendSchema, ApuI
 // Validación para APU
 export const ApuSchema = z.object({
   id: z.string().min(1, 'ID es requerido'),
-  codigo: z.string().regex(/^\d{2}-\d{3}$/, 'Código debe tener formato XX-YYY'),
   descripcion: z.string().min(5, 'Descripción muy corta').max(200, 'Descripción muy larga'),
   unidadSalida: z.string().min(1, 'Unidad es requerida').max(10, 'Unidad muy larga'),
   items: z.array(ApuItemSchema).min(1, 'Debe tener al menos un item')

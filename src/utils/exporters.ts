@@ -18,13 +18,13 @@ export function exportBudgetToCSV(
   params: { gg: number; util: number; iva: number }
 ): void {
   const apusIndex: Record<string, Apu> = Object.fromEntries(apus.map(a => [a.id, a]));
-  const headers = ['Código', 'Descripción', 'Unidad', 'Metrado', 'Unit. Directo', 'Total Directo'];
+  const headers = ['APU', 'Descripción', 'Unidad', 'Metrado', 'Unit. Directo', 'Total Directo'];
   const csvData = rows.map(r => {
     const a = apus.find(x => x.id === r.apuId);
     if (!a) return [];
     const uc = unitCost(a, resources, apusIndex).unit;
     const dir = uc * r.metrados;
-    return [a.codigo, a.descripcion, a.unidadSalida, r.metrados, uc, dir];
+  return [a.id || '', a.descripcion, a.unidadSalida, r.metrados, uc, dir];
   });
   
   const csvContent = [
@@ -67,7 +67,7 @@ export function exportAPUToText(
   const u = unitCost(apu, resources, apusIndex);
   
   const apuData = [
-    `APU: ${apu.codigo} - ${apu.descripcion}`,
+  `APU: ${apu.id} - ${apu.descripcion}`,
     `Unidad: ${apu.unidadSalida}`,
     `Metrado: ${metrados} ${apu.unidadSalida}`,
     '',
@@ -102,7 +102,7 @@ export function exportAPUToText(
   const blob = new Blob([apuData], { type: 'text/plain;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `apu_${apu.codigo.replace('-', '_')}.txt`;
+  link.download = `apu_${(apu.id || 'sin_id').replace('-', '_')}.txt`;
   link.click();
 }
 
@@ -133,7 +133,7 @@ export function printAPU(
   const printContent = `
     <html>
       <head>
-        <title>APU ${apu.codigo}</title>
+  <title>APU ${(apu.id||'')}</title>
         <style>
           body { font-family: monospace; margin: 20px; }
           .header { text-align: center; margin-bottom: 20px; }
@@ -145,7 +145,7 @@ export function printAPU(
       <body>
         <div class="header">
           <h2>ANÁLISIS DE PRECIO UNITARIO</h2>
-          <h3>${apu.codigo} - ${apu.descripcion}</h3>
+          <h3>${apu.id || ''} - ${apu.descripcion}</h3>
           <p>Unidad: ${apu.unidadSalida} | Metrado: ${metrados}</p>
         </div>
         <table class="table">

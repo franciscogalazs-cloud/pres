@@ -78,7 +78,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
               value={search}
               onChange={(event) => onSearch(event.target.value)}
               className="border-none bg-transparent text-slate-700 focus:outline-none focus:ring-0"
-              placeholder="Descripción o código"
+              placeholder="Descripción"
             />
           </label>
           <button
@@ -116,9 +116,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
                   <td className="px-4 py-3 text-slate-500">{item.numero}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800">{item.descripcion}</div>
-                    <div className="text-xs text-slate-400">
-                      {item.codigoExterno ? `Código: ${item.codigoExterno}` : ''}
-                    </div>
+                    <div className="text-xs text-slate-400">&nbsp;</div>
                   </td>
                   <td className="px-4 py-3 text-slate-500">{item.unidad.toUpperCase()}</td>
                   <td className="px-4 py-3 text-right font-semibold">

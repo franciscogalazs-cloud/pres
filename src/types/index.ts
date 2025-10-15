@@ -34,7 +34,6 @@ export type ApuItem = ApuItemCoef | ApuItemRend | ApuItemSubApu;
 
 export interface Apu {
   id: string;
-  codigo: string;
   descripcion: string;
   unidadSalida: string;
   items: ApuItem[];

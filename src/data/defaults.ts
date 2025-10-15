@@ -66,14 +66,12 @@ export const defaultResources: Record<string, Resource> = {
 export const apus: Apu[] = [
   {
     id: "apu_topografia_inicial",
-    codigo: "01-010",
     descripcion: "Levantamiento topográfico y PRs",
     unidadSalida: "gl",
     items: [{ resourceId: "topo_dia", tipo: "coef", coef: 1, merma: 0 }],
   },
   {
     id: "apu_trazado_niveles",
-    codigo: "01-020",
     descripcion: "Trazado de ejes y niveles en obra",
     unidadSalida: "m²",
     items: [
@@ -83,7 +81,6 @@ export const apus: Apu[] = [
   },
   {
     id: "apu_excavacion_manual",
-    codigo: "02-010",
     descripcion: "Excavación a mano en zanja",
     unidadSalida: "m³",
     items: [
@@ -93,7 +90,6 @@ export const apus: Apu[] = [
   },
   {
     id: "apu_h25_fundaciones",
-    codigo: "03-020",
     descripcion: "Hormigón fundaciones H-25",
     unidadSalida: "m³",
     items: [
@@ -105,7 +101,6 @@ export const apus: Apu[] = [
   },
   {
     id: "apu_h25_muros",
-    codigo: "03-021",
     descripcion: "Hormigón muros H-25",
     unidadSalida: "m³",
     items: [
@@ -119,7 +114,6 @@ export const apus: Apu[] = [
   },
   {
     id: "apu_moldajes_fundaciones",
-    codigo: "03-030",
     descripcion: "Moldajes hormigón fundaciones",
     unidadSalida: "m²",
     items: [
@@ -130,7 +124,6 @@ export const apus: Apu[] = [
   },
   {
     id: "apu_enfierradura",
-    codigo: "03-040",
     descripcion: "Enfierraduras",
     unidadSalida: "kg",
     items: [
@@ -141,7 +134,6 @@ export const apus: Apu[] = [
   },
   {
     id: "apu_radier_10cm",
-    codigo: "04-010",
     descripcion: "Radier 10 cm H-25 con malla",
     unidadSalida: "m²",
     items: [

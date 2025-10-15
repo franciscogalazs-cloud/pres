@@ -5,7 +5,6 @@ export interface ApuDraft {
   descripcion: string;
   unidad: string;
   precioUnitario: number;
-  codigoExterno?: string;
 }
 
 interface ApuEditModalProps {
@@ -26,7 +25,6 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
     descripcion: '',
     unidad: '',
     precioUnitario: 0,
-    codigoExterno: '',
   });
 
   useEffect(() => {
@@ -37,7 +35,6 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
         descripcion: '',
         unidad: '',
         precioUnitario: 0,
-        codigoExterno: '',
       });
     }
   }, [apu, open]);
@@ -106,17 +103,7 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
               />
             </label>
 
-            <label className={labelCls}>
-              Código Externo
-              <input
-                type="text"
-                className={inputCls}
-                value={draft.codigoExterno ?? ''}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, codigoExterno: event.target.value }))
-                }
-              />
-            </label>
+            {/* Código externo eliminado */}
           </div>
 
           <footer className="flex items-center justify-end gap-3 pt-2">
