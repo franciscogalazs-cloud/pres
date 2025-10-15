@@ -3353,7 +3353,6 @@ export default function App(){
                   })()}
                 </div>
                 <button onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
-                <button onClick={ensureNewApusPresent} className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-sm">↻ Re-sembrar nuevos APUs</button>
               </div>
             </div>
 
