@@ -3335,8 +3335,6 @@ export default function App(){
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <h2 className="text-lg font-semibold">Biblioteca de APUs</h2>
               <div className="flex flex-wrap gap-2 items-center">
-                <button onClick={()=>setLibScope('all')} className={`px-3 py-1.5 rounded-xl text-sm ${libScope==='all'?'bg-sky-700 text-white':'bg-slate-800 hover:bg-slate-700'}`}>Ver todos los APUs</button>
-                <button onClick={()=>setLibScope('mine')} className={`px-3 py-1.5 rounded-xl text-sm ${libScope==='mine'?'bg-green-700 text-white':'bg-slate-800 hover:bg-slate-700'}`}>Ver mis APUs</button>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-slate-400">Buscar:</span>
                   <input value={libSearch} onChange={e=>setLibSearch(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sm" />
