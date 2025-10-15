@@ -1,4 +1,5 @@
 import React from "react";
+import CurrencyInput from "./CurrencyInput";
 import { TrashIcon, PencilSquareIcon, DocumentDuplicateIcon, ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 
 type RowProps = {
@@ -29,12 +30,12 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
   }, 0);
   const effPu = typeof row.overrideUnitPrice === 'number' && Number.isFinite(row.overrideUnitPrice) ? row.overrideUnitPrice : pu;
   const total = typeof row.overrideTotal === 'number' && Number.isFinite(row.overrideTotal) ? row.overrideTotal : (effPu * qty);
-  const unitOptions = ['','m','m2','m3','kg','jornal','día','hora','gl'];
+  const unitOptions = ['','u','m','m2','m3','kg','jornal','día','hora','gl'];
   const defaultUnit = row.unidadSalida ?? (ids[0] ? (getApuById(ids[0])?.unidadSalida || '') : '');
 
   return (
     <>
-    <tr className="hover:bg-slate-800/60 text-xs whitespace-nowrap">
+  <tr className="hover:bg-slate-800/60 text-xs whitespace-nowrap group">
       {/* # (visual, no editable) */}
       <td className="h-10 px-3 text-center w-10 tabular-nums align-middle">{index + 1}</td>
       {/* Descripción */}
@@ -78,7 +79,13 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
           {onDuplicate && (
             <button aria-label="Duplicar partida" onClick={() => onDuplicate(row.id)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"><DocumentDuplicateIcon className="h-4 w-4"/></button>
           )}
-          <button aria-label="Eliminar partida" onClick={() => onDelete(row.id)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"><TrashIcon className="h-4 w-4"/></button>
+          <button
+            aria-label="Eliminar partida"
+            onClick={() => { if (!confirm('¿Eliminar esta partida completa?')) return; onDelete(row.id); }}
+            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+          >
+            <TrashIcon className="h-4 w-4"/>
+          </button>
           <select aria-label="Mover a capítulo" value={row.chapterId} onChange={e=>onMoveChapter(row.id, e.target.value)} className="ml-1 h-7 px-2 rounded-md bg-slate-800 border border-slate-700 text-xs">
             {chapters.map(c => <option key={c.id} value={c.id}>{c.letter}</option>)}
           </select>
@@ -98,9 +105,8 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                 const apu = getApuById(id);
                 const un = apu?.unidadSalida || 'GL';
                 const puApu = (()=>{ try{ return unitCost(apu, resources).unit; }catch{ return 0; } })();
-                const totalApu = puApu * qty;
                 return (
-                  <div key={id} className="flex items-center gap-2 text-[11px]">
+                  <div key={id} className="flex items-center gap-2 text-[11px] group">
                     <span className="text-slate-500">•</span>
                     <button
                       onClick={() => onShowApuDetail && onShowApuDetail(id)}
@@ -109,20 +115,22 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                     >
                       {apu.descripcion}
                     </button>
-                    <span className="text-slate-400">— {un} · {fmt(puApu)} · Total: {fmt(totalApu)}</span>
+                    <span className="text-slate-400">— {un} · {fmt(puApu)}</span>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
                         if (!confirm('¿Quitar este APU de la partida?')) return;
-                        const current: string[] = row.apuIds?.length ? [...row.apuIds] : (row.apuId ? [row.apuId] : []);
-                        const next = current.filter(x => x !== id);
-                        onUpdateRow(row.id, { apuIds: next, apuId: next[0] || null });
+                        const next = ids.filter(x => x !== id);
+                        if (next.length > 0) {
+                          onUpdateRow(row.id, { apuIds: next });
+                        } else {
+                          onUpdateRow(row.id, { apuIds: [], apuId: '' });
+                        }
                       }}
-                      className="ml-1 p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"
-                      title="Quitar"
-                      aria-label="Quitar APU"
+                      className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                      title="Quitar APU de la partida"
+                      aria-label="Quitar APU de la partida"
                     >
-                      <TrashIcon className="h-4 w-4"/>
+                      <TrashIcon className="h-3.5 w-3.5"/>
                     </button>
                   </div>
                 );
@@ -150,7 +158,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
       const totS = (typeof s.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : effPuS * sQty;
       return (
         <React.Fragment key={sid}>
-          <tr className="hover:bg-slate-800/60 text-xs whitespace-nowrap">
+          <tr className="hover:bg-slate-800/60 text-xs whitespace-nowrap group">
             {/* # */}
             <td className="h-10 px-3 text-center w-10 tabular-nums align-middle">{index + 1}.{sIdx + 1}</td>
             {/* Descripción subpartida */}
@@ -173,7 +181,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                 onChange={(e) => onUpdateSubRow && onUpdateSubRow(row.id, sid, { unidadSalida: e.target.value })}
               >
                 <option value="">UN...</option>
-                {['m','m2','m3','kg','jornal','día','hora','gl'].map(u => (
+                {['u','ml','m','m2','m3','kg','jornal','día','hora','gl'].map(u => (
                   <option key={u} value={u}>{u}</option>
                 ))}
               </select>
@@ -191,39 +199,27 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
             </td>
             {/* P. Unit. subpartida */}
             <td className="h-10 px-3 text-right w-36 align-middle tabular-nums">
-              <div className="relative">
-                <input
-                  aria-label="Precio unitario (CLP)"
-                  type="number"
-                  step={1}
-                  className="h-9 w-full text-right rounded-md bg-slate-800 border border-slate-700 px-2 pr-8 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-500 tabular-nums"
-                  value={(typeof s.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : ''}
-                  placeholder={effPuS ? `${fmt(effPuS)}` : '0'}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') { onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideUnitPrice: undefined }); return; }
-                    onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideUnitPrice: Number(val) });
-                  }}
-                />
-              </div>
+              <CurrencyInput
+                ariaLabel="Precio unitario (CLP)"
+                value={typeof s.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice) ? s.overrideUnitPrice : undefined}
+                onChange={(val)=>{
+                  if (val === undefined) { onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideUnitPrice: undefined }); return; }
+                  onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideUnitPrice: Number(val) });
+                }}
+                placeholder={effPuS ? `${fmt(effPuS)}` : '0'}
+              />
             </td>
             {/* Total subpartida */}
             <td className="h-10 px-3 text-right w-40 align-middle tabular-nums font-semibold">
-              <div className="relative">
-                <input
-                  aria-label="Total (CLP)"
-                  type="number"
-                  step={1}
-                  className="h-9 w-full text-right rounded-md bg-slate-800 border border-slate-700 px-2 pr-8 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-500 tabular-nums font-semibold"
-                  value={(typeof s.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : ''}
-                  placeholder={totS ? `${fmt(totS)}` : '0'}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') { onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideTotal: undefined }); return; }
-                    onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideTotal: Number(val) });
-                  }}
-                />
-              </div>
+              <CurrencyInput
+                ariaLabel="Total (CLP)"
+                value={typeof s.overrideTotal === 'number' && Number.isFinite(s.overrideTotal) ? s.overrideTotal : undefined}
+                onChange={(val)=>{
+                  if (val === undefined) { onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideTotal: undefined }); return; }
+                  onUpdateSubRow && onUpdateSubRow(row.id, sid, { overrideTotal: Number(val) });
+                }}
+                placeholder={totS ? `${fmt(totS)}` : '0'}
+              />
             </td>
             {/* Acciones subpartida */}
             <td className="h-10 px-2 align-middle">
@@ -253,7 +249,12 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                   </button>
                 )}
                 {onRemoveSubRow && (
-                  <button aria-label="Eliminar subpartida" title="Eliminar subpartida" onClick={() => onRemoveSubRow(row.id, sid)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60">
+                  <button
+                    aria-label="Eliminar subpartida"
+                    title="Eliminar subpartida"
+                    onClick={() => { if (!confirm('¿Eliminar esta subpartida?')) return; onRemoveSubRow(row.id, sid); }}
+                    className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                  >
                     <TrashIcon className="h-4 w-4"/>
                   </button>
                 )}
@@ -270,26 +271,24 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                       const apu = getApuById(id);
                       const un = apu?.unidadSalida || 'GL';
                       const puApu = (()=>{ try{ return unitCost(apu, resources).unit; }catch{ return 0; } })();
-                      const totalApu = puApu * sQty;
                         return (
-                          <div key={id} className="flex items-center gap-2 text-[11px]">
+                          <div key={id} className="flex items-center gap-2 text-[11px] group">
                           <span className="text-slate-500">•</span>
                           <button onClick={() => onShowApuDetail && onShowApuDetail(id)} className="text-slate-200 hover:underline text-left" title={apu.descripcion}>
                             {apu.descripcion}
                           </button>
-                          <span className="text-slate-400">— {un} · {fmt(puApu)} · Total: {fmt(totalApu)}</span>
+                          <span className="text-slate-400">— {un} · {fmt(puApu)}</span>
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
+                              onClick={() => {
                                 if (!confirm('¿Quitar este APU de la subpartida?')) return;
-                                const next = (sIds || []).filter(x => x !== id);
+                                const next = sIds.filter(x => x !== id);
                                 onUpdateSubRow && onUpdateSubRow(row.id, sid, { apuIds: next });
                               }}
-                              className="ml-1 p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"
-                              title="Quitar APU de subpartida"
-                              aria-label="Quitar APU de subpartida"
+                              className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                              title="Quitar APU de la subpartida"
+                              aria-label="Quitar APU de la subpartida"
                             >
-                              <TrashIcon className="h-4 w-4"/>
+                              <TrashIcon className="h-3.5 w-3.5"/>
                             </button>
                         </div>
                       );

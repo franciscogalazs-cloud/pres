@@ -63,32 +63,7 @@ export default function BudgetTable({ chapters, rows, getApuById, unitCost, reso
               </button>
               <div className="ml-auto text-sm text-slate-300">Subtotal: <b>{fmt(0)}</b></div>
             </div>
-            {!!(ch.subChapters && ch.subChapters.length) && (
-              <ul className="mt-2 ml-10 text-xs text-slate-300 space-y-1">
-                {ch.subChapters!.map(sc=> (
-                  <li key={sc.id} className="flex items-center gap-2">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span>
-                    <span className="flex-1">{sc.title}</span>
-                    <button
-                      title="Renombrar"
-                      aria-label="Renombrar subcapítulo"
-                      onClick={()=>onRenameSubChapter && onRenameSubChapter(ch.id, sc.id)}
-                      className="p-1 rounded hover:bg-slate-700/60"
-                    >
-                      <PencilSquareIcon className="h-4 w-4"/>
-                    </button>
-                    <button
-                      title="Eliminar"
-                      aria-label="Eliminar subcapítulo"
-                      onClick={()=>onDeleteSubChapter && onDeleteSubChapter(ch.id, sc.id)}
-                      className="p-1 rounded hover:bg-slate-700/60"
-                    >
-                      <TrashIcon className="h-4 w-4"/>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* subChapters ocultos según solicitud */}
           </div>
         );
         const isCollapsed = !!collapsed[ch.id];
@@ -105,32 +80,7 @@ export default function BudgetTable({ chapters, rows, getApuById, unitCost, reso
                 </button>
                 <div className="ml-auto text-sm text-slate-300">Subtotal: <b>{fmt(chSubtotal)}</b></div>
               </div>
-              {!!(ch.subChapters && ch.subChapters.length) && (
-                <ul className="mt-2 ml-10 text-xs text-slate-300 space-y-1">
-                  {ch.subChapters!.map(sc=> (
-                    <li key={sc.id} className="flex items-center gap-2">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span>
-                      <span className="flex-1">{sc.title}</span>
-                      <button
-                        title="Renombrar"
-                        aria-label="Renombrar subcapítulo"
-                        onClick={()=>onRenameSubChapter && onRenameSubChapter(ch.id, sc.id)}
-                        className="p-1 rounded hover:bg-slate-700/60"
-                      >
-                        <PencilSquareIcon className="h-4 w-4"/>
-                      </button>
-                      <button
-                        title="Eliminar"
-                        aria-label="Eliminar subcapítulo"
-                        onClick={()=>onDeleteSubChapter && onDeleteSubChapter(ch.id, sc.id)}
-                        className="p-1 rounded hover:bg-slate-700/60"
-                      >
-                        <TrashIcon className="h-4 w-4"/>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {/* subChapters ocultos según solicitud */}
             </div>
             {!isCollapsed && (
             <div className="overflow-x-auto">

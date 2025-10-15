@@ -22,14 +22,14 @@
 }
 
 .glitch:not(.enable-on-hover)::after {
-  left: 10px;
-  text-shadow: var(--after-shadow, -10px 0 red);
-  animation: animate-glitch var(--after-duration, 3s) infinite linear alternate-reverse;
+  left: 6px;
+  text-shadow: var(--after-shadow, -6px 0 rgba(255,0,0,.35));
+  animation: animate-glitch var(--after-duration, 4s) infinite linear alternate-reverse;
 }
 .glitch:not(.enable-on-hover)::before {
-  left: -10px;
-  text-shadow: var(--before-shadow, 10px 0 cyan);
-  animation: animate-glitch var(--before-duration, 2s) infinite linear alternate-reverse;
+  left: -6px;
+  text-shadow: var(--before-shadow, 6px 0 rgba(0,255,255,.35));
+  animation: animate-glitch var(--before-duration, 3s) infinite linear alternate-reverse;
 }
 
 .glitch.enable-on-hover::after,
@@ -42,16 +42,16 @@
 .glitch.enable-on-hover:hover::after {
   content: attr(data-text);
   opacity: 1;
-  left: 10px;
-  text-shadow: var(--after-shadow, -10px 0 red);
-  animation: animate-glitch var(--after-duration, 3s) infinite linear alternate-reverse;
+  left: 6px;
+  text-shadow: var(--after-shadow, -6px 0 rgba(255,0,0,.35));
+  animation: animate-glitch var(--after-duration, 4s) infinite linear alternate-reverse;
 }
 .glitch.enable-on-hover:hover::before {
   content: attr(data-text);
   opacity: 1;
-  left: -10px;
-  text-shadow: var(--before-shadow, 10px 0 cyan);
-  animation: animate-glitch var(--before-duration, 2s) infinite linear alternate-reverse;
+  left: -6px;
+  text-shadow: var(--before-shadow, 6px 0 rgba(0,255,255,.35));
+  animation: animate-glitch var(--before-duration, 3s) infinite linear alternate-reverse;
 }
 
 @keyframes animate-glitch {
