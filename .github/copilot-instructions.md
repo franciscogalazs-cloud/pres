@@ -7,9 +7,14 @@ Esta es una aplicación React para gestión de APU (Análisis de Precios Unitari
 ### Estructura Principal
 ```
 src/
-  App.tsx          - Componente único que contiene toda la lógica
-  main.tsx         - Entry point estándar de React
-  index.css        - Setup de Tailwind + font Inter
+  App.tsx                 - Componente principal con estado y modales
+  components/
+    BudgetTable.tsx       - Vista desktop de capítulos/partidas
+    Row.tsx               - Filas de partidas y subpartidas
+    CurrencyInput.tsx     - Input monetario CLP
+  main.tsx                - Entry point estándar de React
+  index.css               - Setup de Tailwind + font Inter
+```
 ```
 
 ## Patrones Específicos del Proyecto
@@ -31,10 +36,12 @@ total += r.precio / (it.rendimiento || 1)
 ```
 
 ### Estado y UI
-- **Single-file component**: Todo en `App.tsx` usando hooks de React
-- **Tabs simples**: `'apu' | 'presupuesto'` con estado local
-- **Formularios controlados**: Todos los inputs usan `value` + `onChange`
-- **Metrados asistidos**: Calculator de cantidad × largo × ancho
+- **App única con componentes**: `App.tsx` orquesta estado global; subcomponentes en `components/`.
+- **Tabs**: `'proyecto' | 'biblioteca' | 'presupuesto'` con estado local.
+- **Formularios controlados**: Inputs con `value` + `onChange`.
+- **Metrados asistidos**: Calculadoras simples de cantidad × dimensiones.
+- **Modal APU**: Editable, con secciones A–D y soporte de secciones extra “extras”.
+- **Desde Presupuesto**: Al clicar el nombre del APU se abre el modal; se puede quitar APU con confirmación.
 
 ## Convenciones de Código
 
@@ -81,4 +88,12 @@ npm run preview # Preview del build
 - **Precios en CLP**: Formato chileno con separadores de miles
 - **Gastos generales + Utilidad + IVA**: Estructura típica de presupuestos chilenos
 
-Cuando modifiques APUs, mantén coherencia en unidades y precios realistas del mercado chileno 2024.
+Cuando modifiques APUs, mantén coherencia en unidades y precios realistas del mercado chileno 2024–2025.
+
+## Robustez del Modal APU
+- El modal normaliza `secciones`: valida arrays en `materiales/equipos/manoObra/varios` y admite `extras` como arreglo `{title, rows}` o como claves “heredadas” convertidas a secciones extra.
+- Siempre garantiza al menos una fila vacía por sección al abrir.
+
+## Despliegue
+- Preparado para GitHub Pages (`base=/pres/`) y fallback SPA (`404.html`).
+- Usa GitHub Actions en `main` o la rama `gh-pages` para demos.

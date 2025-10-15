@@ -6,9 +6,13 @@ Aplicación de gestión de APU y presupuestos de construcción. Stack: Vite + Re
 
 ```
 .
-├─ public/
 ├─ src/
-│  ├─ App.tsx
+│  ├─ App.tsx                # Lógica principal, estado global y modales
+│  ├─ components/
+│  │  ├─ BudgetTable.tsx     # Tabla (desktop) de capítulos/partidas
+│  │  ├─ Row.tsx             # Filas de partidas y subpartidas
+│  │  ├─ CurrencyInput.tsx   # Input monetario con formato CLP
+│  │  └─ Glitch*.css/tsx     # Efectos visuales puntuales
 │  ├─ main.tsx
 │  └─ index.css
 ├─ package.json
@@ -43,65 +47,50 @@ npm ci             # o npm install
 npm run dev        # abre http://localhost:5173
 ```
 
-## Despliegue
+## Funcionalidades clave
 
-La app está preparada para GitHub Pages. Se usan dos flujos: el “oficial” con Actions (recomendado para producción) y uno alternativo vía rama `gh-pages` (útil para demos desde features).
+- Biblioteca de APU con secciones A–D (Materiales, Equipos, Mano de Obra, Varios) y “extras” personalizadas.
+- Modal de detalle APU: edición de filas, totales por sección, observaciones y secciones extra.
+- Presupuesto por capítulos/partidas, con subpartidas y asignación de múltiples APUs por partida/subpartida.
+- Abrir modal de APU directamente desde Presupuesto haciendo clic en el nombre del APU (desktop y móvil).
+- Quitar APU desde Presupuesto con confirmación:
+  - Papelera visible siempre en móvil.
+  - En desktop, la papelera aparece solo al pasar el mouse (hover).
+- Totales (directo, GG, Utilidad, IVA) con parámetros ajustables.
+- Formato CLP coherente (es-CL) en toda la UI.
 
-### A) GitHub Pages (oficial con Actions)
+## Datos iniciales y presets
 
-- Workflow: `.github/workflows/deploy-pages.yml`
-- Características:
-   - Construye con `npm ci` y `vite build --base=/pres/`.
-   - Copia `dist/index.html` a `dist/404.html` para fallback SPA.
-   - Publica usando `actions/deploy-pages` (entorno `github-pages`).
-   - Regla: despliega solo desde `main`.
+- Catálogo de recursos “hardcodeado”.
+- APUs de ejemplo ampliados (incluye partidas para piscina y red hidráulica en conjunto).
+- Botones “Cargar preset Casa 10×10” y “Cargar preset piscina” para poblar un presupuesto de ejemplo.
 
-Pasos en el repo:
-1) Settings → Pages → Build and deployment → Source: “GitHub Actions”.
-2) Hacer merge a `main`. El workflow construye y publica automáticamente.
-3) URL: `https://<usuario>.github.io/pres/`
+## Despliegue (GitHub Pages)
 
-Notas:
-- El parámetro `--base=/pres/` es necesario porque el nombre del repo es `pres`.
-- Si sale “Branch 'X' is not allowed to deploy…”, el environment `github-pages` está protegido para `main`.
+El proyecto está preparado para publicarse en GitHub Pages. Puedes usar:
 
-### B) gh-pages (alternativo para demos)
+- GitHub Actions para publicar desde `main` (recomendado para producción).
+- Rama `gh-pages` para demos rápidas desde features.
 
-- Workflow: `.github/workflows/deploy-gh-pages.yml`
-- Características:
-   - Construye con `npm ci` y `vite build --base=/pres/`.
-   - Copia `dist/index.html` a `dist/404.html` (SPA).
-   - Publica `./dist` a la rama `gh-pages` con `peaceiris/actions-gh-pages`.
-   - Puede dispararse en `main` y/o en ramas de feature.
-
-Pasos en el repo:
-1) Settings → Pages → Build and deployment → Source: “Deploy from a branch”.
-2) Branch: `gh-pages`, Folder: `/` (root) → Guardar.
-3) Al hacer push, el workflow publica en `gh-pages` y queda disponible en `https://<usuario>.github.io/pres/`.
-
-### Cambiar entre flujos
-
-- Para producción estable: usar flujo A (Actions) y dejar Pages en “GitHub Actions”.
-- Para demos rápidas desde features: usar flujo B (gh-pages) y dejar Pages en “Deploy from a branch: gh-pages”.
-- Evita tener ambos activos a la vez para no confundir el origen de la publicación.
+Notas importantes:
+- Configura `base` de Vite en `/pres/` para rutas correctas al publicar en Pages.
+- Incluye `404.html` como fallback de SPA (copia de `index.html`).
 
 ## Buenas prácticas del repo
 
-- `dist/` no se versiona (está en `.gitignore`).
-- El build lo genera CI en cada despliegue.
+- No versionar `dist/` (está en `.gitignore`).
+- Validar build antes de publicar (TypeScript y Vite ambos OK).
 
 ## Troubleshooting
 
-- 404 al desplegar: confirma `--base=/pres/` y que existe `dist/404.html`.
-- “Failed to create deployment (404)”: habilita Pages en Settings → Pages.
-- “Branch 'X' is not allowed to deploy…”: el environment `github-pages` solo permite `main`. Usa gh-pages o mergea a `main`.
-- Activos sin estilo/ruta rota en producción: revisa que Pages apunte al origen correcto (Actions vs gh-pages) y el `base` de Vite.
+- 404 al desplegar: confirma `base=/pres/` y que existe `dist/404.html`.
+- Paths rotos en producción: revisa el origen configurado en Pages (Actions vs gh-pages) y el `base` de Vite.
 
 ## Notas de dominio (resumen)
 
 - APU y Presupuestos con precios en CLP, formato chileno.
-- Recursos estáticos, APUs con secciones A–D y extras, cálculo unitario coherente.
-- Seeding incluido: “APU vacío (ejemplo)” y estructura mínima de presupuesto; botón “Ejemplo (APU vacío)”.
+- Recursos estáticos, APUs con secciones A–D y extras; cálculo unitario por suma de secciones.
+- Estructura típica: Gastos generales + Utilidad + IVA.
 
 ---
 
