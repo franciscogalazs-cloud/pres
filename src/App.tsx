@@ -1,4 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { ProjectInfoForm } from './components/ui/ProjectInfoForm';
+import { UserForm } from './components/ui/UserForm';
+import { UsersTable } from './components/ui/UsersTable';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import type { UserInfo } from './types';
 import CurrencyInput from './components/CurrencyInput';
 import GlitchText from './components/GlitchText';
 import GlitchImage from './components/GlitchImage';
@@ -96,12 +101,8 @@ export default function App(){
   useEffect(()=>{ localStorage.setItem('apu-iva', String(iva)); }, [iva]);
 
   // Info proyecto + usuarios
-  const [projectInfo, setProjectInfo] = useState<any>(()=>{
-    try{ return JSON.parse(localStorage.getItem('apu-project')||'{}'); }catch{ return {}; }
-  });
-  const [users, setUsers] = useState<any[]>(()=>{
-    try{ return JSON.parse(localStorage.getItem('apu-users')||'[]'); }catch{ return []; }
-  });
+  const [projectInfo, setProjectInfo] = useLocalStorage<any>('apu-project', {});
+  const [users, setUsers] = useLocalStorage<any[]>('apu-users', []);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
   const handleSaveProjectInfo = (data:any)=>{
@@ -109,12 +110,18 @@ export default function App(){
     if(typeof data.pctGG==='number') setGG((data.pctGG||0)/100);
     if(typeof data.pctUtil==='number') setUtil((data.pctUtil||0)/100);
     if(typeof data.pctIVA==='number') setIva((data.pctIVA||0)/100);
-    try{ localStorage.setItem('apu-project', JSON.stringify(data)); }catch{}
     showNotification('Proyecto actualizado','success');
   };
   const handleSaveUser = (u:any)=>{
-    const next = [...users, u]; setUsers(next); try{ localStorage.setItem('apu-users', JSON.stringify(next)); }catch{}; showNotification('Usuario creado','success');
+    const next = [...users, u]; setUsers(next); showNotification('Usuario creado','success');
   };
+  const handleDeleteUser = (idx:number)=>{
+    const next = users.filter((_:any, i:number)=> i!==idx);
+    setUsers(next);
+    showNotification('Usuario eliminado','info');
+  };
+  // Formulario inline para crear usuarios en la pestaña Proyecto
+  const [userForm, setUserForm] = useState<UserInfo>({ nombre:'', email:'', telefono:'', password:'', ciudad:'', tipo:'admin', profesion:'' });
 
   // Biblioteca: personalizados
   const loadLibrary = ()=>{ try{ return JSON.parse(localStorage.getItem('apu-library')||'[]'); }catch{ return []; } };
@@ -317,7 +324,54 @@ export default function App(){
     } as any;
   };
 
-  // ===== Nuevos APUs solicitados =====
+    const buildApuTabiqueMetalconDoblePlaca = () => ({
+      id: 'apu_tabique_metalcon_90_doble_placa',
+      descripcion: 'Tabique Metalcon 90 mm, doble placa 12,5 mm + lana 50 mm',
+      unidadSalida: 'm2',
+      categoria: 'Terminaciones',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Montante C90 (2,7 m/m²)', unidad: 'm2', cantidad: 1, pu: 4585 },
+          { descripcion: 'Solera U92 (0,8 m/m²)', unidad: 'm2', cantidad: 1, pu: 1165 },
+          { descripcion: 'Yeso-cartón 12,5 mm (doble cara)', unidad: 'm2', cantidad: 1, pu: 7738 },
+          { descripcion: 'Lana 50 mm', unidad: 'm2', cantidad: 1, pu: 1874 },
+          { descripcion: 'Tornillos yeso-cartón (18 u/m²)', unidad: 'm2', cantidad: 1, pu: 212 },
+          { descripcion: 'Cinta juntas (1,5 m/m²)', unidad: 'm2', cantidad: 1, pu: 153 },
+          { descripcion: 'Masilla juntas 5 kg (0,6 kg/m²)', unidad: 'm2', cantidad: 1, pu: 899 },
+        ],
+        manoObra: [
+          { descripcion: 'Maestro (10 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 4500 },
+          { descripcion: 'Ayudante (10 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 4500 },
+        ],
+        equipos: [],
+        varios: [ { descripcion: 'Herramientas menores', unidad: 'm2', cantidad: 1, pu: 450 } ],
+      }
+    } as any);
+
+  const buildApuCieloRasoYesoCarton = () => ({
+    id: 'apu_cielo_yeso_carton_12_5_sobre_perf',
+    descripcion: 'Cielo raso yeso-cartón 12,5 mm sobre perfilería existente',
+    unidadSalida: 'm2',
+    categoria: 'Terminaciones',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Yeso-cartón 12,5 mm', unidad: 'm2', cantidad: 1, pu: 3867 },
+        { descripcion: 'Tornillos drywall (18 u/m²)', unidad: 'm2', cantidad: 1, pu: 212 },
+        { descripcion: 'Cinta juntas', unidad: 'm2', cantidad: 1, pu: 153 },
+        { descripcion: 'Masilla juntas 5 kg (0,6 kg/m²)', unidad: 'm2', cantidad: 1, pu: 899 },
+      ],
+      manoObra: [
+        { descripcion: 'Maestro (12 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 3750 },
+        { descripcion: 'Ayudante (12 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 3750 },
+      ],
+      equipos: [],
+      varios: [ { descripcion: 'Herramientas menores', unidad: 'm2', cantidad: 1, pu: 375 } ],
+    }
+  } as any);
+
+  // APU: Excavar zanja manual (m3)
   const buildApuExcavacionZanjaManual = () => ({
     id: 'apu_exc_zanja_manual',
     descripcion: 'Excavación de zanja manual',
@@ -335,6 +389,7 @@ export default function App(){
     }
   } as any);
 
+  // APU: Relleno y compactación manual (m3)
   const buildApuRellenoCompactManual = () => ({
     id: 'apu_relleno_compact_manual',
     descripcion: 'Relleno y compactación manual',
@@ -352,6 +407,7 @@ export default function App(){
     }
   } as any);
 
+  // APU: Hormigón en zapata corrida (ml)
   const buildApuZapataCorridaEnZanja = () => ({
     id: 'apu_hormigon_zapata_corrida_ml',
     descripcion: 'Hormigón en zapata corrida 0,40×0,20 (en zanja)',
@@ -374,6 +430,7 @@ export default function App(){
     }
   } as any);
 
+  // APU: Radier H-25 10 cm con malla y polietileno (m2)
   const buildApuRadierH25ConMalla = () => ({
     id: 'apu_radier_h25_10cm_malla_polietileno',
     descripcion: 'Radier H-25 10 cm con malla y polietileno',
@@ -398,6 +455,7 @@ export default function App(){
     }
   } as any);
 
+  // APU: Albañilería ladrillo fiscal (m2)
   const buildApuAlbanileriaLadrilloComun = () => ({
     id: 'apu_albanileria_ladrillo_fiscal_m2',
     descripcion: 'Albañilería ladrillo fiscal (aparejo común)',
@@ -415,53 +473,6 @@ export default function App(){
       ],
       equipos: [],
       varios: [ { descripcion: 'Herramientas menores', unidad: 'm2', cantidad: 1, pu: 900 } ],
-    }
-  } as any);
-
-  const buildApuTabiqueMetalconDoblePlaca = () => ({
-    id: 'apu_tabique_metalcon_90_doble_placa',
-    descripcion: 'Tabique Metalcon 90 mm, doble placa 12,5 mm + lana 50 mm',
-    unidadSalida: 'm2',
-    categoria: 'Terminaciones',
-    codigoExterno: '',
-    secciones: {
-      materiales: [
-        { descripcion: 'Montante C90 (2,7 m/m²)', unidad: 'm2', cantidad: 1, pu: 4585 },
-        { descripcion: 'Solera U92 (0,8 m/m²)', unidad: 'm2', cantidad: 1, pu: 1165 },
-        { descripcion: 'Yeso-cartón 12,5 mm (doble cara)', unidad: 'm2', cantidad: 1, pu: 7738 },
-        { descripcion: 'Lana 50 mm', unidad: 'm2', cantidad: 1, pu: 1874 },
-        { descripcion: 'Tornillos yeso-cartón (18 u/m²)', unidad: 'm2', cantidad: 1, pu: 212 },
-        { descripcion: 'Cinta juntas (1,5 m/m²)', unidad: 'm2', cantidad: 1, pu: 153 },
-        { descripcion: 'Masilla juntas 5 kg (0,6 kg/m²)', unidad: 'm2', cantidad: 1, pu: 899 },
-      ],
-      manoObra: [
-        { descripcion: 'Maestro (10 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 4500 },
-        { descripcion: 'Ayudante (10 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 4500 },
-      ],
-      equipos: [],
-      varios: [ { descripcion: 'Herramientas menores', unidad: 'm2', cantidad: 1, pu: 450 } ],
-    }
-  } as any);
-
-  const buildApuCieloRasoYesoCarton = () => ({
-    id: 'apu_cielo_yeso_carton_12_5_sobre_perf',
-    descripcion: 'Cielo raso yeso-cartón 12,5 mm sobre perfilería existente',
-    unidadSalida: 'm2',
-    categoria: 'Terminaciones',
-    codigoExterno: '',
-    secciones: {
-      materiales: [
-        { descripcion: 'Yeso-cartón 12,5 mm', unidad: 'm2', cantidad: 1, pu: 3867 },
-        { descripcion: 'Tornillos drywall (18 u/m²)', unidad: 'm2', cantidad: 1, pu: 212 },
-        { descripcion: 'Cinta juntas', unidad: 'm2', cantidad: 1, pu: 153 },
-        { descripcion: 'Masilla juntas 5 kg (0,6 kg/m²)', unidad: 'm2', cantidad: 1, pu: 899 },
-      ],
-      manoObra: [
-        { descripcion: 'Maestro (12 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 3750 },
-        { descripcion: 'Ayudante (12 m²/jornal)', unidad: 'm2', cantidad: 1, pu: 3750 },
-      ],
-      equipos: [],
-      varios: [ { descripcion: 'Herramientas menores', unidad: 'm2', cantidad: 1, pu: 375 } ],
     }
   } as any);
 
@@ -2328,6 +2339,7 @@ export default function App(){
   const [libSearch, setLibSearch] = useState('');
   const [libCategory, setLibCategory] = useState<string>('all');
   const [showCreateApu, setShowCreateApu] = useState(false);
+  const [showApuAssistant, setShowApuAssistant] = useState(false);
   const [showEditApu, setShowEditApu] = useState(false);
   const [apuEditing, setApuEditing] = useState<any|null>(null);
   // Expansión inline para edición estilo planilla
@@ -3201,15 +3213,29 @@ export default function App(){
   {tab==='proyecto' && (
           <>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <h2 className="text-lg font-semibold">Proyectos guardados</h2>
-              <div className="flex flex-wrap gap-2 items-center">
-                <button onClick={()=>setShowProjectModal(true)} className="px-3 py-1.5 rounded-xl text-sm bg-slate-800 hover:bg-slate-700">Editar info proyecto</button>
-              </div>
+              <h2 className="text-lg font-semibold">Proyecto</h2>
             </div>
-            <div className="bg-slate-800 rounded-2xl p-4 shadow">
-              {projects.length===0 ? (
-                <div className="text-slate-400 text-sm">No hay proyectos guardados aún. Ve a Presupuesto y usa “Guardar”.</div>
-              ) : (
+
+            {/* Formularios directos lado a lado */}
+            <div className="grid md:grid-cols-2 gap-3">
+              {/* Información del Proyecto (simplificado) */}
+              <ProjectInfoForm value={projectInfo||{}} onChange={handleSaveProjectInfo} />
+
+              {/* Creación de Usuarios (simplificado) */}
+              <UserForm
+                value={userForm}
+                onChange={setUserForm}
+                onSubmit={()=>{
+                  if(!userForm.email){ showNotification('Email es obligatorio','error'); return; }
+                  handleSaveUser(userForm);
+                  setUserForm({ nombre:'', email:'', telefono:'', password:'', ciudad:'', tipo:'admin', profesion:'' });
+                }}
+              />
+            </div>
+
+            {/* Tabla de Proyectos (sólo si hay datos) */}
+            {projects.length>0 && (
+              <div className="bg-slate-800 rounded-2xl p-4 shadow">
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-slate-300">
@@ -3314,11 +3340,15 @@ export default function App(){
                     })}
                   </tbody>
                 </table>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Modal de proyecto */}
-            <ProjectModal open={showProjectModal} initial={projectInfo} onClose={()=>setShowProjectModal(false)} onSave={handleSaveProjectInfo} />
+            {/* Usuarios del sistema (sólo si hay datos) */}
+            {Array.isArray(users) && users.length>0 && (
+              <UsersTable users={users} onDelete={handleDeleteUser} />
+            )}
+
+            {/* (Modales removidos para vista directa) */}
           </>
         )}
 
@@ -3345,6 +3375,7 @@ export default function App(){
                   })()}
                 </div>
                 <button onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
+                <button onClick={()=>setShowApuAssistant(true)} className="px-3 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-sm text-white">Asistente · APU desde texto</button>
               </div>
             </div>
 
@@ -3632,6 +3663,32 @@ export default function App(){
             </div>
 
             <CreateApuModal open={showCreateApu} onClose={()=>setShowCreateApu(false)} onSave={handleCreateApu} />
+            <ApuAssistantModal
+              open={showApuAssistant}
+              onClose={()=>setShowApuAssistant(false)}
+              onGenerate={(apu)=>{ handleCreateApu(apu); setShowApuAssistant(false); }}
+              builders={{
+                buildApuRadierH25ConMalla,
+                buildApuPavimentoExteriorH25_8cmMalla,
+                buildApuH25ObraVibradoM3,
+                buildApuExcavacionRetiroM3,
+                buildApuExcavacionZanjaManual,
+                buildApuRellenoCompactManual,
+                buildApuZapataCorridaEnZanja,
+                buildApuEnfierraduraKg,
+                buildApuCuradoHumedoM2,
+                buildApuImperCementicia2capasM2,
+                buildApuPinturaPiscina2manosM2,
+                buildApuTabiqueMetalconDoblePlaca,
+                buildApuCieloRasoYesoCarton,
+                buildApuAlbanileriaLadrilloComun,
+                buildApuMuroLadrillo,
+                buildApuEstructuraTechumbreMadera,
+                buildApuCubiertaZincFieltro,
+                buildApuRedHid_ValvulaBola50_u,
+                buildApuRedHid_PVC50_Tuberia_ml,
+              }}
+            />
             <CreateApuModal open={showEditApu} onClose={()=>{setShowEditApu(false); setApuEditing(null);} } onSave={handleSaveEditApu} initial={apuEditing} />
           </>
         )}
@@ -4390,24 +4447,40 @@ function ProjectModal({open, initial, onClose, onSave}){
   const [form, setForm] = useState(initial);
   useEffect(()=>{ setForm(initial); }, [initial]);
   const bind = (k) => ({
-    value: form[k] ?? '',
-    onChange: (e) => setForm({...form, [k]: e.target.value}),
+    value: (form && form[k] !== undefined) ? form[k] : '',
+    onChange: (e) => setForm({...(form||{}), [k]: e.target.value}),
   });
   const bindNum = (k) => ({
-    value: form[k] ?? 0,
-    onChange: (e) => setForm({...form, [k]: Number(e.target.value)||0}),
+    value: (form && form[k] !== undefined) ? form[k] : 0,
+    onChange: (e) => setForm({...(form||{}), [k]: Number(e.target.value)||0}),
   });
+
+  const isEmpty = (v:any) => (v==null || String(v).trim()==='');
+  const nombreReqInvalid = isEmpty((form||{}).nombreProyecto);
+  const propietarioReqInvalid = isEmpty((form||{}).propietario);
+  const canSave = !nombreReqInvalid && !propietarioReqInvalid;
+
 
   return (
     <Modal open={open} title="Información del Proyecto" onClose={onClose}>
       <div className="grid gap-3">
         <label className="text-sm text-slate-300 grid gap-1">
-          <span>Nombre del Proyecto *</span>
-          <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" {...bind('nombreProyecto')} />
+          <span>Nombre del Proyecto <span className="text-red-400">*</span></span>
+          <input
+            aria-invalid={nombreReqInvalid}
+            className={`bg-slate-800 rounded-xl p-2 border ${nombreReqInvalid? 'border-red-500 focus:border-red-400':'border-slate-700 focus:border-slate-500'}`}
+            {...bind('nombreProyecto')}
+          />
+          {nombreReqInvalid && <span className="text-xs text-red-400">Este campo es obligatorio</span>}
         </label>
         <label className="text-sm text-slate-300 grid gap-1">
-          <span>Propietario *</span>
-          <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" {...bind('propietario')} />
+          <span>Propietario <span className="text-red-400">*</span></span>
+          <input
+            aria-invalid={propietarioReqInvalid}
+            className={`bg-slate-800 rounded-xl p-2 border ${propietarioReqInvalid? 'border-red-500 focus:border-red-400':'border-slate-700 focus:border-slate-500'}`}
+            {...bind('propietario')}
+          />
+          {propietarioReqInvalid && <span className="text-xs text-red-400">Este campo es obligatorio</span>}
         </label>
         <label className="text-sm text-slate-300 grid gap-1">
           <span>Dirección</span>
@@ -4479,7 +4552,14 @@ function ProjectModal({open, initial, onClose, onSave}){
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-xl border border-red-500/40 text-red-300 hover:border-red-400">Cerrar</button>
-          <button onClick={()=>onSave(form)} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
+          <button
+            disabled={!canSave}
+            aria-disabled={!canSave}
+            onClick={()=> canSave && onSave(form)}
+            className={`px-4 py-2 rounded-xl text-white ${canSave? 'bg-green-700 hover:bg-green-600':'bg-green-900/50 cursor-not-allowed'}`}
+          >
+            Grabar
+          </button>
         </div>
       </div>
     </Modal>
@@ -4567,6 +4647,223 @@ function CreateApuModal({open, onClose, onSave, initial}:{open:boolean; onClose:
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-xl border border-red-500/40 text-red-300 hover:border-red-400">Cerrar</button>
           <button onClick={()=>onSave({ descripcion: form.descripcion, unidadSalida: form.unidadSalida, categoria: form.categoria||'', items: [], secciones: undefined })} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolean; onClose:()=>void; onGenerate:(apu:any)=>void; builders?: Record<string, any> }){
+  const [raw, setRaw] = useState('');
+  const [unit, setUnit] = useState('');
+  const [category, setCategory] = useState('');
+  const [desc, setDesc] = useState('');
+
+  const parseText = () => {
+    // Parser simple: líneas "Sección: ..." y luego filas "descripcion | unidad | cantidad | pu"
+    // Si no hay secciones, cae en "materiales"
+    const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const apu:any = { descripcion: desc || 'APU sin título', unidadSalida: unit || 'm2', categoria: category || '', secciones: { materiales: [], equipos: [], manoObra: [], varios: [], extras: [] } };
+    let current: 'materiales'|'equipos'|'manoObra'|'varios' = 'materiales';
+
+    // Nuevo: detección de intención por prompt corto ("1 m3 hormigón", "radier 10 cm", "excavación", etc.)
+    const hasStructuredMarkers = (txt:string) => /[|;\t]|@|\$\s*\d/.test(txt);
+    const firstLine = lines[0] || '';
+    const intentText = (desc + ' ' + firstLine).toLowerCase().trim();
+    const extractQtyUnit = (t:string) => {
+      const m = t.match(/(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/]+)\b/);
+      return m ? { qty: Number(String(m[1]).replace(',', '.')), unit: (m[2]||'').toLowerCase() } : { qty: 1, unit: '' };
+    };
+    const tryBuildFromIntent = (t:string) => {
+      if(!t || hasStructuredMarkers(raw)) return null;
+      const n = t.normalize('NFD').replace(/\p{Diacritic}/gu,'');
+      const incl = (w:string) => n.includes(w);
+      const hasAny = (...ws:string[]) => ws.some(w => n.includes(w));
+      // Selección por palabras clave (sin acentos)
+      // Hormigón / H-25 / radier / pavimento
+      if(hasAny('radier','contrapiso','platea','losa radier')) return builders?.buildApuRadierH25ConMalla?.() || null;
+      if((hasAny('pavimento','vereda','calzada','acera','pavi') && (hasAny('h25','h-25','h 25') || hasAny('8cm','8 cm')))){
+        return builders?.buildApuPavimentoExteriorH25_8cmMalla?.() || null;
+      }
+      if(hasAny('hormigon','concreto','h-25','h25','h 25')) return builders?.buildApuH25ObraVibradoM3?.() || null;
+      // Movimiento de tierras
+      if(hasAny('excavacion','excavar','excavaciones','zanjeo','zanja','zanjas') && hasAny('retiro','botadero','dispos','disposicion','camion','tolva','traslado','vertedero','acopio')) return builders?.buildApuExcavacionRetiroM3?.() || null;
+      if(hasAny('excavacion','excavar','excavaciones','zanjeo','zanja','zanjas')) return builders?.buildApuExcavacionZanjaManual?.() || null;
+      if(hasAny('relleno','rellenos') || hasAny('compact','compactacion','compactar','vibroplaca','apisonadora','pison','placa')) return builders?.buildApuRellenoCompactManual?.() || null;
+      if(hasAny('zapata','cimiento corrido','fundacion corrida')) return builders?.buildApuZapataCorridaEnZanja?.() || null;
+      // Acero / enfierradura
+      if(hasAny('enfierradura','armado','acero','fierro','barras','corrugado','armadura')) return builders?.buildApuEnfierraduraKg?.() || null;
+      // Terminaciones varias
+      if(hasAny('curado','curado humedo','cura')) return builders?.buildApuCuradoHumedoM2?.() || null;
+      if(hasAny('impermeabilizacion','hidrofugo','membrana cementicia','impermeabilizacion cementicia','sikatop')) return builders?.buildApuImperCementicia2capasM2?.() || null;
+      if(hasAny('piscina') && hasAny('pintura','revestimiento','epoxica','clorada')) return builders?.buildApuPinturaPiscina2manosM2?.() || null;
+      if(hasAny('tabique','tabiqueria','metalcon','drywall','yeso carton','durlock')) return builders?.buildApuTabiqueMetalconDoblePlaca?.() || null;
+      if((hasAny('cielo raso','cielo','plafon','cielo americano') && hasAny('yeso','carton','yeso carton'))) return builders?.buildApuCieloRasoYesoCarton?.() || null;
+      if(hasAny('muro','albanileria','ladrillo','aparejo')) return builders?.buildApuAlbanileriaLadrilloComun?.() || builders?.buildApuMuroLadrillo?.() || null;
+      if(hasAny('techumbre','cercha','cerchas','estructura techo')) return builders?.buildApuEstructuraTechumbreMadera?.() || null;
+      if(hasAny('cubierta','chapa','zinc','aluzinc','colorbond','plancha') && hasAny('zinc','chapa','aluzinc','plancha')) return builders?.buildApuCubiertaZincFieltro?.() || null;
+      // Redes
+      if(hasAny('valvula') && hasAny('bola','esfera')) return builders?.buildApuRedHid_ValvulaBola50_u?.() || null;
+      if((hasAny('tuberia','caneria','cañeria','pvc','caner') && hasAny('ø50','50mm','50 mm','dn50',' 50',' 050','50')) ) return builders?.buildApuRedHid_PVC50_Tuberia_ml?.() || null;
+      return null;
+    };
+    const maybeApu = tryBuildFromIntent(intentText);
+    if(maybeApu){
+      // Si el usuario puso unidad o la línea tiene una unidad al principio, respetarla
+      const { unit: parsedUnit } = extractQtyUnit(firstLine);
+      const outUnit = (unit || parsedUnit || maybeApu.unidadSalida || '').trim();
+      const outDesc = (desc || maybeApu.descripcion || 'APU generado').trim();
+      const outCat = (category || maybeApu.categoria || '').trim();
+      return { ...maybeApu, descripcion: outDesc, unidadSalida: outUnit || maybeApu.unidadSalida, categoria: outCat };
+    }
+
+    const guessSection = (descripcion:string, unidad:string): 'materiales'|'equipos'|'manoObra'|'varios' => {
+      const d = (descripcion||'').toLowerCase();
+      const u = (unidad||'').toLowerCase();
+      // Mano de obra: roles + unidades típicas HH/jornal
+      const moWords = ['maestro','ayudante','carpintero','yesero','pintor','albañil','topógrafo','topografo','operador','jornal','mano de obra','peón','peon'];
+      if (moWords.some(w=> d.includes(w)) || ['jornal','hh','hora-hombre','h-h','h/h'].some(x=>u.includes(x))) return 'manoObra';
+      // Varios: herramientas menores, misceláneos/imprevistos
+      if (d.includes('herramientas menores') || d.includes('misceláneos') || d.includes('miscelaneos') || d.includes('imprevisto') || d.includes('gastos varios') || d.includes('miscel')) return 'varios';
+      // Equipos: maquinaria/equipo + hora/día
+      const eqWords = ['retroexcavadora','bomba','betonera','vibrador','compactadora','andamio','grúa','grua','camión','camion','mixer','generador','equipo','pluma','martillo', 'cortadora', 'sierra'];
+      if (eqWords.some(w=> d.includes(w)) || (['hora','día','dia'].some(x=>u.includes(x)) && (d.includes('equipo') || d.includes('maquinaria')))) return 'equipos';
+      // Materiales por defecto
+      return 'materiales';
+    };
+
+    const toNumber = (s:string)=> Number(String(s||'').replace(/[^0-9,.-]/g,'').replace(/\.(?=.*\.)/g,'').replace(',', '.')) || 0;
+    const guessCategory = (text:string) => {
+      const t = (text||'').toLowerCase();
+      const rules: Array<[string, string[]]> = [
+        ['Obra gruesa', ['excav', 'hormig', 'encofr', 'acero', 'radier', 'zapata', 'losa', 'moldaj', 'albañil', 'albanil', 'relleno', 'compactación', 'compactacion']],
+        ['Terminaciones', ['pintura', 'cerám', 'ceram', 'porcelanato', 'tabique', 'yeso', 'cielo', 'piso', 'guardapolvo', 'fragüe', 'fragüe', 'masilla']],
+        ['Techumbre', ['techumbre', 'cubierta', 'teja', 'zinc', 'fieltro', 'cumbrera', 'canaleta', 'bajada', 'entretechos']],
+        ['Instalaciones sanitarias', ['sanitaria', 'red hídr', 'red hid', 'pvc', 'desag', 'biodigestor', 'alcant']],
+        ['Instalaciones eléctricas', ['eléctrica', 'electrica', 'enchufe', 'cable', 'tablero', 'breaker', 'te1', 'sec']],
+        ['Fachada', ['fachada', 'revestimiento exterior', 'fibrocemento', 'siding']],
+        ['Servicios', ['trámite', 'tramite', 'permiso', 'dom', 'cálculo', 'calculo', 'recepción', 'recepcion']]
+      ];
+      for(const [cat, kws] of rules){ if(kws.some(k=> t.includes(k))) return cat; }
+      return '';
+    };
+    const parseFreeForm = (line:string) => {
+      // 1) Formato: "1 m3 Hormigón H-25 @ $188.836"
+      let m = line.match(/^(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/%]+)\s+(.+?)\s*@\s*\$?\s*([\d\.,]+)/i);
+      if(m){
+        const cantidad = toNumber(m[1]);
+        const unidad = (m[2]||'').trim();
+        const descripcion = (m[3]||'').trim();
+        const pu = toNumber(m[4]);
+        return { descripcion, unidad, cantidad, pu };
+      }
+      // 2) Formato: "Hormigón H-25 1 m3 $188.836"
+      m = line.match(/^(.+?)\s+(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/%]+)\s*\$?\s*([\d\.,]+)$/i);
+      if(m){
+        const descripcion = (m[1]||'').trim();
+        const cantidad = toNumber(m[2]);
+        const unidad = (m[3]||'').trim();
+        const pu = toNumber(m[4]);
+        return { descripcion, unidad, cantidad, pu };
+      }
+      // 3) Formato: "Cemento 25 kg | saco | 14 | 4790" (ya cubierto por split) o "Cemento 25 kg 14 sacos 4790"
+      m = line.match(/^(.+?)\s+(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/%]+)s?\b\s+([\d\.,]+)$/i);
+      if(m){
+        const descripcion = (m[1]||'').trim();
+        const cantidad = toNumber(m[2]);
+        const unidad = (m[3]||'').trim();
+        const pu = toNumber(m[4]);
+        return { descripcion, unidad, cantidad, pu };
+      }
+      // 4) Fallback: sólo descripción → cantidad 1, pu 0
+      if(line.length>0){
+        return { descripcion: line, unidad: '', cantidad: 1, pu: 0 };
+      }
+      return null;
+    };
+    for(const line of lines){
+      const secMatch = line.toLowerCase().match(/^(material(es)?|equipo(s)?|mano\s*obra|varios)\s*[:：-]/i);
+      if(secMatch){
+        const tag = secMatch[1].toLowerCase();
+        if(tag.startsWith('mater')) current = 'materiales';
+        else if(tag.startsWith('equipo')) current = 'equipos';
+        else if(tag.startsWith('mano')) current = 'manoObra';
+        else current = 'varios';
+        continue;
+      }
+      const parts = line.split(/\s*\|\s*|\t|;|,/); // soporta "|", tab, ";" o ","
+      if(parts.length>=3 && parts[0] && parts[1]){
+        const [d,u,c,pu] = parts;
+        const row = {
+          descripcion: (d||'').trim(),
+          unidad: (u||'').trim() || '',
+          cantidad: toNumber(String(c||0)),
+          pu: toNumber(String(pu||0))
+        };
+        if(row.descripcion){
+          const sec = guessSection(row.descripcion, row.unidad);
+          (apu.secciones[sec] as any[]).push(row);
+        }
+        continue;
+      }
+      const ff = parseFreeForm(line);
+      if(ff && ff.descripcion){
+        const sec = guessSection(ff.descripcion, ff.unidad);
+        (apu.secciones[sec] as any[]).push(ff);
+      }
+    }
+    // Inferir categoría si no se especificó
+    if(!String(category||'').trim()){
+      const textBlob = [desc, ...lines].filter(Boolean).join(' \n ');
+      const cat = guessCategory(textBlob);
+      if(cat) apu.categoria = cat;
+    }
+    // Inferir unidad de salida si el usuario no la especificó
+    if(!String(unit||'').trim()){
+      const rowsAll: any[] = [
+        ...(apu.secciones.materiales||[]),
+        ...(apu.secciones.equipos||[]),
+        ...(apu.secciones.manoObra||[]),
+        ...(apu.secciones.varios||[]),
+        ...((apu.secciones.extras||[]).flatMap((e:any)=> e?.rows||[]))
+      ];
+      const freq: Record<string,{n:number, repr:string}> = {};
+      for(const r of rowsAll){
+        const u = (r?.unidad||'').trim(); if(!u) continue;
+        const k = normUnit(u);
+        if(!freq[k]) freq[k] = { n:0, repr: u };
+        freq[k].n++;
+      }
+      const best = Object.values(freq).sort((a,b)=> b.n - a.n)[0]?.repr;
+      if(best) apu.unidadSalida = best;
+    }
+    return apu;
+  };
+
+  return (
+    <Modal open={open} title="Asistente: Generar APU desde texto" onClose={onClose}>
+      <div className="grid gap-3">
+        <div className="grid md:grid-cols-3 gap-3">
+          <label className="text-sm text-slate-300 grid gap-1">
+            <span>Descripción APU</span>
+            <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={desc} onChange={e=>setDesc(e.target.value)} />
+          </label>
+          <label className="text-sm text-slate-300 grid gap-1">
+            <span>Unidad salida</span>
+            <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={unit} onChange={e=>setUnit(e.target.value)} />
+          </label>
+          <label className="text-sm text-slate-300 grid gap-1">
+            <span>Categoría</span>
+            <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={category} onChange={e=>setCategory(e.target.value)} />
+          </label>
+        </div>
+        <label className="text-sm text-slate-300 grid gap-1">
+            <span>Pega tu texto (una fila por línea) o escribe un prompt corto. Ejemplos rápidos: "1 m3 hormigón", "radier 10 cm", "excavación", "enfierradura". También soporta formatos: "descripcion | unidad | cantidad | pu" o libre tipo "1 m3 Hormigón H-25 @ $188.836". Auto-clasifica filas y sugiere Categoría por palabras clave; puedes forzar secciones con "Materiales:", "Equipos:", "Mano Obra:", "Varios:".</span>
+          <textarea className="min-h-[220px] bg-slate-900 border border-slate-700 rounded-xl p-2 font-mono text-xs" value={raw} onChange={e=>setRaw(e.target.value)} placeholder={"Materiales:\nCemento 25 kg | saco | 14 | 4790\nArena a granel | m3 | 0.563 | 32900\n\nMano Obra:\nMaestro | m3 | 1 | 12500\nAyudante | m3 | 1 | 7300"} />
+        </label>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
+          <button onClick={()=>{ const apu = parseText(); onGenerate(apu); }} className="px-3 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-white">Generar APU</button>
         </div>
       </div>
     </Modal>

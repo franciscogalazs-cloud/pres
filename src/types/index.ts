@@ -180,3 +180,32 @@ export interface CostBreakdown {
   ivaVal: number;
   total: number;
 }
+
+// ====== Tipos de Proyecto y Usuario ======
+
+export interface ProjectInfo {
+  nombreProyecto?: string;
+  propietario?: string;
+  direccion?: string;
+  ciudad?: string;
+  comuna?: string;
+  fecha?: string; // ISO yyyy-mm-dd
+  plazoDias?: number;
+  // Campos financieros opcionales (omitidos en UI actual)
+  pctLeyes?: number;
+  pctIVA?: number;
+  ggMode?: 'separados' | 'agrupados';
+  pctGG?: number;
+  pctUtil?: number;
+  mostrarGGEn?: 'itemizado' | 'apu';
+}
+
+export interface UserInfo {
+  nombre?: string;
+  email?: string;
+  telefono?: string;
+  password?: string;
+  ciudad?: string;
+  tipo?: 'admin' | 'normal';
+  profesion?: string;
+}
