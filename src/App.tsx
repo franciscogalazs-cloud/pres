@@ -1,235 +1,163 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ProjectInfoForm } from './components/ui/ProjectInfoForm';
-import { UserForm } from './components/ui/UserForm';
-import { UsersTable } from './components/ui/UsersTable';
+import { useNotifications } from './hooks/useNotifications';
+import { uid, fmt, normUnit } from './utils/formatters';
+import { unitCost } from './utils/calculations';
+import { useResources } from './hooks/useResources';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import type { UserInfo } from './types';
-import CurrencyInput from './components/CurrencyInput';
+import { ProjectInfoModal } from './components/ui/ProjectInfoModal';
 import GlitchText from './components/GlitchText';
 import GlitchImage from './components/GlitchImage';
+import { NotificationToast } from './components/NotificationToast';
+import CurrencyInput from './components/CurrencyInput';
+import { EyeIcon, PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import UserQuickModal from './components/ui/UserQuickModal';
 import BudgetTable from './components/BudgetTable';
-import { TrashIcon, EyeIcon, PencilSquareIcon, PrinterIcon } from "@heroicons/react/24/outline";
-// Puedes cambiar a mono_light-icon-256.png, mono_teal-icon-256.png u original_cutout-icon-256.png
-import logoMark from "../presupuestos_logo_pack/original_cutout-icon-256.png";
-const normUnit = (u:string) => u.replace("²","2").replace("³","3").toLowerCase();
-const clamp0 = (n:number) => Math.max(0, Number.isFinite(n)? n: 0);
-const uid = () => Math.random().toString(36).slice(2,9);
-// Formateador de moneda CLP
-const fmt = (n: number) => new Intl.NumberFormat("es-CL", {
-  style: "currency",
-  currency: "CLP",
-  maximumFractionDigits: 0,
-}).format(n || 0);
+// Nota: Se eliminaron ProjectInfoForm/UserForm/UsersTable al remover la pestaña Proyecto
 
-// ================= Datos base =================
-const defaultResources: Record<string, any> = {
-  jornal_maestro: { id: "jornal_maestro", tipo: "mano_obra", nombre: "Maestro jornal", unidad: "jornal", precio: 49500 },
-  jornal_ayudante: { id: "jornal_ayudante", tipo: "mano_obra", nombre: "Ayudante jornal", unidad: "jornal", precio: 29915 },
-  retro_4x4_hora: { id: "retro_4x4_hora", tipo: "equipo", nombre: "Retroexcavadora 4x4 hora", unidad: "hora", precio: 42000 },
-  bomba_hora: { id: "bomba_hora", tipo: "equipo", nombre: "Bomba de hormigón hora", unidad: "hora", precio: 31303 },
-  h25_m3: { id: "h25_m3", tipo: "material", nombre: "Hormigón H-25 (m³)", unidad: "m3", precio: 188836 },
-  encofrado_m2: { id: "encofrado_m2", tipo: "material", nombre: "Madera encofrado (m²)", unidad: "m2", precio: 28442 },
-  acero_kg: { id: "acero_kg", tipo: "material", nombre: "Acero A63-42H (kg)", unidad: "kg", precio: 3133 },
-  topo_dia: { id: "topo_dia", tipo: "servicio", nombre: "Topografía con estación total (día)", unidad: "día", precio: 510000 },
-};
+const App: React.FC = () => {
+  const { notifications, showNotification, dismissNotification } = useNotifications();
+  // Estado de pestañas (Proyecto eliminado)
+  const [tab, setTab] = useState<'biblioteca'|'presupuesto'>('presupuesto');
 
-function loadResources(){
-  try{
-    const saved = localStorage.getItem('apu-resources');
-    return saved ? { ...defaultResources, ...JSON.parse(saved) } : defaultResources;
-  }catch{ return defaultResources; }
-}
-
-// Catálogo base de APUs eliminado: solo se usan APUs personalizados guardados por el usuario
-
-// Cálculo del unitario directo
-function unitCost(apu:any, resources:Record<string, any>)
-{
-  // Preferir secciones si existen (materiales/equipos/manoObra/varios/extras)
-  const sec:any = (apu as any)?.secciones;
-  const sumRows = (arr:any[]) => (arr||[]).reduce((acc:number, r:any)=> acc + (Number(r.cantidad)||0) * (Number(r.pu)||0), 0);
-  if(sec && typeof sec==='object'){
-    const a = sumRows(sec.materiales||[]);
-    const b = sumRows(sec.equipos||[]);
-    const c = sumRows(sec.manoObra||[]);
-    const d = sumRows(sec.varios||[]);
-    const ext = (Array.isArray(sec.extras)? sec.extras : []).reduce((acc:number, s:any)=> acc + sumRows((s&&s.rows)||[]), 0);
-    const total = a + b + c + d + ext;
-    if(total > 0 || (
-      ((sec.materiales||[]).length + (sec.equipos||[]).length + (sec.manoObra||[]).length + (sec.varios||[]).length) > 0 ||
-      (Array.isArray(sec.extras) && sec.extras.length>0)
-    )){
-      return { unit: total };
-    }
-  }
-  // Si no hay secciones, usar items base (coef/rendimiento)
-  const total = (apu?.items||[]).reduce((acc:number, it:any)=>{
-    const r = resources[it.resourceId]; if(!r) return acc;
-    if(it.tipo==='coef') return acc + (it.coef||0) * r.precio * (1 + (it.merma||0));
-    return acc + r.precio / (it.rendimiento||1);
-  }, 0);
-  return { unit: total };
-}
-
-// ================= App =================
-export default function App(){
-  // Tabs: proyecto | biblioteca | presupuesto
-  const [tab, setTab] = useState<'proyecto'|'biblioteca'|'presupuesto'>('presupuesto');
-
-  // Notificaciones
-  const [notification, setNotification] = useState<{show:boolean; message:string; type:'success'|'error'|'info'}>({show:false, message:'', type:'success'});
-  const showNotification = (message:string, type:'success'|'error'|'info'='success')=>{
-    setNotification({ show:true, message, type });
-    setTimeout(()=> setNotification(s=>({...s, show:false})), 2800);
+  // Utilidad local para capitalizar títulos (usado en tooltips del header)
+  const titleCase = (s?: string): string => {
+    const str = String(s || '').trim();
+    return str.toLowerCase().replace(/\b\p{L}+/gu, w => w.charAt(0).toUpperCase() + w.slice(1));
   };
 
-  // Recursos
-  const [resources, setResources] = useState<Record<string, any>>(()=>loadResources());
-  const updateResourcePrice = (id:string, value:any)=>{
-    const precio = Number(value)||0;
-    const next = { ...resources, [id]: { ...resources[id], precio } };
-    setResources(next);
-    try{ localStorage.setItem('apu-resources', JSON.stringify(next)); }catch{}
-  };
+  // Logo de marca
+  const logoMark = '/brand/logo-presupuestos-mark.svg';
 
-  // Proyecto: gg/util/iva
-  const [gg, setGG] = useState<number>(()=> Number(localStorage.getItem('apu-gg')||'0.18'));
-  const [util, setUtil] = useState<number>(()=> Number(localStorage.getItem('apu-util')||'0.10'));
-  const [iva, setIva] = useState<number>(()=> Number(localStorage.getItem('apu-iva')||'0.19'));
-  useEffect(()=>{ localStorage.setItem('apu-gg', String(gg)); }, [gg]);
-  useEffect(()=>{ localStorage.setItem('apu-util', String(util)); }, [util]);
-  useEffect(()=>{ localStorage.setItem('apu-iva', String(iva)); }, [iva]);
+  // Recursos (catálogo con persistencia)
+  const { resources, setResources } = useResources();
 
-  // Info proyecto + usuarios
-  const [projectInfo, setProjectInfo] = useLocalStorage<any>('apu-project', {});
-  const [users, setUsers] = useLocalStorage<any[]>('apu-users', []);
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [showUserModal, setShowUserModal] = useState(false);
-  const handleSaveProjectInfo = (data:any)=>{
-    setProjectInfo(data);
-    if(typeof data.pctGG==='number') setGG((data.pctGG||0)/100);
-    if(typeof data.pctUtil==='number') setUtil((data.pctUtil||0)/100);
-    if(typeof data.pctIVA==='number') setIva((data.pctIVA||0)/100);
-    showNotification('Proyecto actualizado','success');
-  };
-  const handleSaveUser = (u:any)=>{
-    const next = [...users, u]; setUsers(next); showNotification('Usuario creado','success');
-  };
-  const handleDeleteUser = (idx:number)=>{
-    const next = users.filter((_:any, i:number)=> i!==idx);
-    setUsers(next);
-    showNotification('Usuario eliminado','info');
-  };
-  // Formulario inline para crear usuarios en la pestaña Proyecto
-  const [userForm, setUserForm] = useState<UserInfo>({ nombre:'', email:'', telefono:'', password:'', ciudad:'', tipo:'admin', profesion:'' });
+  // Parámetros financieros (persistidos)
+  const [gg, setGG] = useLocalStorage<number>('apu-gg', 0.18);
+  const [util, setUtil] = useLocalStorage<number>('apu-util', 0.20);
+  const [iva, setIva] = useLocalStorage<number>('apu-iva', 0.19);
 
-  // Biblioteca: personalizados
-  const loadLibrary = ()=>{ try{ return JSON.parse(localStorage.getItem('apu-library')||'[]'); }catch{ return []; } };
-  const saveLibrary = (arr:any[])=>{
-    // Guardar sin códigos correlativos
-    try{ localStorage.setItem('apu-library', JSON.stringify(arr||[])); }catch{}
-    setCustomApus(arr||[]);
-  };
-  const [customApus, setCustomApus] = useState<any[]>(loadLibrary);
-  const allApus = useMemo(()=>[...customApus], [customApus]);
-  const getApuById = (id:string)=> allApus.find(a=>a.id===id);
+  // Info de proyecto inline (cuando no hay uno del stick activo)
+  const loadProjectInfo = () => { try { return JSON.parse(localStorage.getItem('apu-project') || '{}'); } catch { return {}; } };
+  const [projectInfo, setProjectInfo] = useState<any>(loadProjectInfo);
+  useEffect(()=>{ try{ localStorage.setItem('apu-project', JSON.stringify(projectInfo||{})); }catch{} }, [projectInfo]);
 
-  // Forzar siembra de nuevos APUs (sin piscina)
-  const ensureNewApusPresent = ()=>{
+  // Stick de proyectos (lista y activo)
+  const [savedProjectsList, setSavedProjectsList] = useLocalStorage<any[]>('apu-projects-list', []);
+  const [activeProjectId, setActiveProjectId] = useLocalStorage<string | null>('apu-active-project-id', null);
+  const activeProject = useMemo(()=> (savedProjectsList||[]).find(p => String(p?.id||'') === String(activeProjectId||'')) || null, [savedProjectsList, activeProjectId]);
+
+  // Usuarios simples + usuario activo
+  const loadUsers = () => { try{ return JSON.parse(localStorage.getItem('apu-users')||'[]')||[]; }catch{ return []; } };
+  const [users, setUsers] = useState<any[]>(loadUsers);
+  useEffect(()=>{ try{ localStorage.setItem('apu-users', JSON.stringify(users||[])); }catch{} }, [users]);
+  const [activeUserEmail, setActiveUserEmail] = useLocalStorage<string | null>('apu-active-user-email', null);
+  const activeUser = useMemo(()=> (users||[]).find((u:any)=> String(u?.email||'') === String(activeUserEmail||'')) || null, [users, activeUserEmail]);
+
+  const handleSaveUser = (u:any) => {
     try{
-      const lib = [...customApus];
-      const addIfMissing = (id:string, builder: ()=>any)=>{
-        if(!lib.find(a=>a.id===id)) lib.push(builder());
-      };
-      // Nuevos agregados (incluye piscina)
-      addIfMissing('apu_excavacion_retiro_m3', buildApuExcavacionRetiroM3);
-      addIfMissing('apu_base_estabilizada_10cm_m2', buildApuBaseEstabilizada10cmM2);
-      addIfMissing('apu_encofrado_doble_cara_m2', buildApuEncofradoDobleCaraM2);
-      addIfMissing('apu_enfierradura_kg', buildApuEnfierraduraKg);
-      addIfMissing('apu_h25_obra_vibrado_m3', buildApuH25ObraVibradoM3);
-      addIfMissing('apu_curado_humedo_m2', buildApuCuradoHumedoM2);
-      addIfMissing('apu_imper_cementicia_2capas_m2', buildApuImperCementicia2capasM2);
-      addIfMissing('apu_pintura_piscina_2manos_m2', buildApuPinturaPiscina2manosM2);
-      // Red hidráulica (unitarios)
-      addIfMissing('apu_red_hid_pvc50_tuberia_ml', buildApuRedHid_PVC50_Tuberia_ml);
-      addIfMissing('apu_red_hid_codo_50_u', buildApuRedHid_Codo50_u);
-      addIfMissing('apu_red_hid_tee_50_u', buildApuRedHid_Tee50_u);
-      addIfMissing('apu_red_hid_valvula_bola_50_u', buildApuRedHid_ValvulaBola50_u);
-      addIfMissing('apu_red_hid_skimmer_u', buildApuRedHid_Skimmer_u);
-      addIfMissing('apu_red_hid_retorno_u', buildApuRedHid_Retorno_u);
-      addIfMissing('apu_red_hid_desague_fondo_u', buildApuRedHid_DesagueFondo_u);
-      addIfMissing('apu_red_hid_kit_filtro_bomba_set', buildApuRedHid_KitFiltroBomba_set);
-      addIfMissing('apu_red_hid_arena_filtro_saco', buildApuRedHid_ArenaFiltro_saco);
-      addIfMissing('apu_red_hid_pruebas_ls', buildApuRedHid_PruebasLS);
-  addIfMissing('apu_red_hid_conjunto_set', buildApuRedHidConjuntoSet);
-      const addedCount = lib.length - customApus.length;
-      if(addedCount>0){
-        saveLibrary(lib);
-        // Mostrar en "Ver todos" y limpiar filtros para que se vean
-        setLibScope('all');
-        setLibSearch('');
-        setLibCategory('all');
-        showNotification(`Se agregaron ${addedCount} APUs a la biblioteca`,'success');
-      } else {
-        setLibScope('all');
-        showNotification('No había APUs nuevos para agregar (ya están en la biblioteca)','info');
-      }
-    }catch{ showNotification('No se pudo resembrar APUs','error'); }
+      const email = String(u?.email||'').trim();
+      if(!email){ showNotification('Email es obligatorio','error'); return; }
+      setUsers((prev:any[] = [])=>{
+        const idx = prev.findIndex(x=> String(x?.email||'')===email);
+        const base = { nombre:'', telefono:'', password:'', ciudad:'', tipo:'admin', profesion:'', ...u };
+        if(idx>=0){ const next = [...prev]; next[idx] = { ...prev[idx], ...base }; return next; }
+        return [...prev, base];
+      });
+      setActiveUserEmail(email);
+      showNotification('Usuario guardado','success');
+    } catch { showNotification('Error al guardar el usuario','error'); }
   };
 
-  // Auto-verificación al montar: si faltan, re-sembrar
-  useEffect(()=>{
-    const need = [
-      'apu_excavacion_retiro_m3',
-      'apu_base_estabilizada_10cm_m2',
-      'apu_encofrado_doble_cara_m2',
-      'apu_enfierradura_kg',
-      'apu_h25_obra_vibrado_m3',
-      'apu_curado_humedo_m2',
-      'apu_imper_cementicia_2capas_m2',
-      'apu_pintura_piscina_2manos_m2',
-      'apu_red_hid_pvc50_tuberia_ml',
-      'apu_red_hid_codo_50_u',
-      'apu_red_hid_tee_50_u',
-      'apu_red_hid_valvula_bola_50_u',
-      'apu_red_hid_skimmer_u',
-      'apu_red_hid_retorno_u',
-      'apu_red_hid_desague_fondo_u',
-      'apu_red_hid_kit_filtro_bomba_set',
-      'apu_red_hid_arena_filtro_saco',
-      'apu_red_hid_pruebas_ls',
-  'apu_red_hid_conjunto_set',
-    ];
-    const ids = new Set((customApus||[]).map((a:any)=>a.id));
-    if(need.some(id=>!ids.has(id))){
-      ensureNewApusPresent();
+
+  const handleDeleteUser = (email:string) => {
+    setUsers((prev:any[] = [])=> prev.filter(u => String(u?.email||'') !== String(email||'')));
+    if(activeUserEmail === email){ setActiveUserEmail(null); }
+  };
+
+  // Modal minimalista de usuario
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [userModalInitial, setUserModalInitial] = useState<any|null>(null);
+  const handleCreateUserQuick = () => { setUserModalInitial(null); setUserModalOpen(true); };
+  const handleEditUserQuick = () => {
+    if(!activeUser){ showNotification('Selecciona un usuario para editar','info'); return; }
+    setUserModalInitial(activeUser);
+    setUserModalOpen(true);
+  };
+  const handleDeleteUserQuick = () => {
+    if(!activeUser){ showNotification('Selecciona un usuario para eliminar','info'); return; }
+    if(confirm(`¿Eliminar al usuario "${activeUser?.nombre||activeUser?.email||''}"?`)){
+      handleDeleteUser(String(activeUser?.email||''));
+      showNotification('Usuario eliminado','info');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Proyectos guardados (snapshots de presupuesto)
-  const ensureArrayProjects = (val:any): any[] => {
-    if(Array.isArray(val)) return val;
-    if(val && typeof val==='object') return [val];
-    return [];
   };
-  const loadProjects = () => { try{ const parsed = JSON.parse(localStorage.getItem('apu-projects')||'[]'); return ensureArrayProjects(parsed); }catch{ return []; } };
-  const saveProjects = (list:any[])=>{ const arr = ensureArrayProjects(list); try{ localStorage.setItem('apu-projects', JSON.stringify(arr)); }catch{}; setProjects(arr); };
+
+  // Estado modal de guardado de proyecto
+  const [showProjectInfoModalForSave, setShowProjectInfoModalForSave] = useState(false);
+  // Flujo especial: crear nuevo presupuesto (stick nuevo y budget en blanco)
+  const [newBudgetFlow, setNewBudgetFlow] = useState(false);
+  const [projectModalInitial, setProjectModalInitial] = useState<any|null>(null);
+
+  // ===== Biblioteca de APUs (persistencia simple en localStorage) =====
+  const readLibrary = () => { try{ return JSON.parse(localStorage.getItem('apu-library')||'[]'); }catch{ return []; } };
+  const [allApus, setAllApus] = useState<any[]>(()=> readLibrary());
+  useEffect(()=>{ try{ localStorage.setItem('apu-library', JSON.stringify(allApus||[])); }catch{} }, [allApus]);
+  const customApus = allApus;
+  const saveLibrary = (list:any[])=>{ setAllApus(list||[]); try{ localStorage.setItem('apu-library', JSON.stringify(list||[])); }catch{} };
+  const getApuById = (id:string)=>{ const a = (allApus||[]).find((x:any)=> x.id===id); if(a) return a; throw new Error('APU no encontrado'); };
+
+  // ===== Snapshots de proyectos (para impresión/carga) =====
+  const loadProjects = () => { try{ return JSON.parse(localStorage.getItem('apu-projects')||'[]'); }catch{ return []; } };
   const [projects, setProjects] = useState<any[]>(loadProjects);
-  // Migración: si había un objeto simple, normalizar a arreglo en primer render
-  useEffect(()=>{
-    try{
-      const raw = localStorage.getItem('apu-projects');
-      if(raw!=null){ const parsed = JSON.parse(raw); const norm = ensureArrayProjects(parsed); if(JSON.stringify(parsed)!==JSON.stringify(norm)){ localStorage.setItem('apu-projects', JSON.stringify(norm)); } setProjects(norm); }
-    }catch{}
-  }, []);
-  // Al entrar a la pestaña Proyecto, recargar desde localStorage por si hubo cambios previos
-  useEffect(()=>{
-    if(tab==='proyecto'){
-      try{ setProjects(loadProjects()); }catch{}
-    }
-  }, [tab]);
+  const saveProjects = (list:any[])=>{ try{ localStorage.setItem('apu-projects', JSON.stringify(list||[])); }catch{}; setProjects(list||[]); };
+  const ensureArrayProjects = (val:any)=> Array.isArray(val) ? val : (Array.isArray(val?.items) ? val.items : []);
 
+  // Lista de proyectos para el stick (catálogo visible)
+  const projectsCatalog = useMemo(()=> Array.isArray(savedProjectsList)? savedProjectsList : [], [savedProjectsList]);
+
+  // Selección de proyecto desde el stick: carga snapshot reciente y sincroniza estado
+  const handleProjectSelect = (pid: string | null) => {
+    if(!pid){ setActiveProjectId(null); return; }
+    if(pid==='inline'){ setActiveProjectId('inline'); return; }
+    setActiveProjectId(pid);
+    try{
+      const norm = (s:string)=> (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+      const stick = (savedProjectsList||[]).find((p:any)=> String(p?.id||'')===String(pid));
+      if(!stick) return;
+      const name = String(stick.name||'');
+      const snaps = ensureArrayProjects(projects).filter((p:any)=> norm(p?.projectName||p?.name||'')===norm(name));
+      const snap = snaps.sort((a:any,b:any)=> (b?.createdAt||0) - (a?.createdAt||0))[0];
+      if(!snap) return;
+      // Recursos
+  if(snap.resourcesSnapshot){ try{ setResources(snap.resourcesSnapshot); }catch{} }
+      // Parámetros financieros
+      if(typeof snap.gg==='number') setGG(snap.gg);
+      if(typeof snap.util==='number') setUtil(snap.util);
+      if(typeof snap.iva==='number') setIva(snap.iva);
+      // Usuario activo
+      if(snap.savedByEmail){ setActiveUserEmail(String(snap.savedByEmail)); }
+      // Presupuesto/budget
+      const rowsNext = Array.isArray(snap.rows)? snap.rows : [];
+      const chNext = Array.isArray(snap.chapters)? snap.chapters : [];
+      const curId = String(snap.currentChapterId||'');
+      const projName = snap.projectName || stick.name || '';
+      const targetId = snap.budgetId ? String(snap.budgetId) : `b_${Date.now()}`;
+      const bName = projName ? `Presupuesto · ${projName}` : 'Presupuesto';
+      setBudgetsMap((prev:any)=>{
+        const prevMap = prev||{};
+        const exists = !!prevMap[targetId];
+        const base = exists ? prevMap[targetId] : { id: targetId, createdAt: Date.now() };
+        const doc = { ...base, id: targetId, name: bName, rows: rowsNext, chapters: chNext, currentChapterId: curId, updatedAt: Date.now() };
+        return { ...prevMap, [targetId]: doc };
+      });
+      setActiveBudgetId(targetId);
+      // Aplicar estado del snapshot al presupuesto activo
+      setChapters(chNext); saveChapters(chNext);
+      setRows(rowsNext); saveBudget(rowsNext);
+      setCurrentChapterId(curId); saveCurrentChapter(curId);
+      setTab('presupuesto');
+      // Silenciar mensajes al cargar desde stick
+    }catch{ /* noop */ }
+  };
   // APU: Hormigón H-25 hecho en obra (1 m³)
   const buildApuH25Obra = () => {
     // Mano de obra separada por rol, calculada desde montos mensuales (Indeed Chile),
@@ -292,6 +220,44 @@ export default function App(){
       varios: [],
     }
   } as any);
+
+  // Seed inicial de biblioteca si está vacía
+  useEffect(()=>{
+    try{
+      if(Array.isArray(allApus) && allApus.length===0){
+        const seed:any[] = [];
+        try{ seed.push(buildApuH25Obra()); }catch{}
+        try{ seed.push(buildApuMoldajeTerciado()); }catch{}
+        // Sanitarios básicos
+        try{ seed.push(buildApuDrenInfiltracion_m()); }catch{}
+        try{ seed.push(buildApuTuberiaPVC110_m()); }catch{}
+        try{ seed.push(buildApuFosa3000L_u()); }catch{}
+        try{ seed.push(buildApuCamaraInspeccion_u()); }catch{}
+        try{ seed.push(buildApuCamaraDesgrasadora_u()); }catch{}
+        try{ seed.push(buildApuCamaraDistribuidora_u()); }catch{}
+        if(seed.length>0){ saveLibrary(seed); }
+      }
+    }catch{}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Migración: asegurar APUs sanitarios en biblioteca aunque ya existan otros
+  useEffect(()=>{
+    try{
+      const ensure: Array<{id:string; build: ()=>any}> = [
+        { id: 'apu_dren_infiltracion_m', build: buildApuDrenInfiltracion_m },
+        { id: 'apu_tuberia_pvc_110_m', build: buildApuTuberiaPVC110_m },
+        { id: 'apu_fosa_septica_3000l_u', build: buildApuFosa3000L_u },
+        { id: 'apu_camara_inspeccion_elevador_u', build: buildApuCamaraInspeccion_u },
+        { id: 'apu_camara_desgrasadora_100l_u', build: buildApuCamaraDesgrasadora_u },
+        { id: 'apu_camara_distribuidora_100l_u', build: buildApuCamaraDistribuidora_u },
+      ];
+      const present = new Set((allApus||[]).map((a:any)=> String(a?.id||'')));
+      const missing = ensure.filter(e => !present.has(e.id)).map(e=> e.build());
+      if(missing.length>0){ saveLibrary([...(allApus||[]), ...missing]); }
+    }catch{}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // APU: Muro de ladrillo 1 m² (ladrillo fiscal 29×14×8)
   const buildApuMuroLadrillo = () => {
@@ -370,6 +336,182 @@ export default function App(){
       varios: [ { descripcion: 'Herramientas menores', unidad: 'm2', cantidad: 1, pu: 375 } ],
     }
   } as any);
+
+  // APUs Sanitarios solicitados por el usuario
+  const buildApuDrenInfiltracion_m = () => {
+    const mat_tubo = Math.round(2331.7);
+    const mat_geo = 1560;
+    const mat_grav = 4275;
+    const mat_sub = mat_tubo + mat_geo + mat_grav; // ≈ 8167
+    const miscel = Math.round(mat_sub * 0.03); // ≈ 245
+    const mo = Math.round(2421.9); // 2.421,9 ⇒ 2422
+    const eq = 1200; // 0,06 h/m × 20.000
+    return {
+      id: 'apu_dren_infiltracion_m',
+      descripcion: 'Dren de infiltración 0,50×0,80 m',
+      unidadSalida: 'm',
+      categoria: 'Instalaciones sanitarias',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Tubo dren Ø110 (6 m = 13.990 ⇒ 2.332 CLP/m)', unidad: 'm', cantidad: 1, pu: mat_tubo },
+          { descripcion: 'Geotextil (1,3 m²/m × 1.200)', unidad: 'm', cantidad: 1, pu: mat_geo },
+          { descripcion: 'Gravilla ¾” (0,15 m³/m × 28.500)', unidad: 'm', cantidad: 1, pu: mat_grav },
+        ],
+        manoObra: [
+          { descripcion: 'Cuadrilla (2 maestros + 1 ayudante; 64 m/jornada)', unidad: 'm', cantidad: 1, pu: mo },
+        ],
+        equipos: [
+          { descripcion: 'Miniexcavadora (0,06 h/m × 20.000 CLP/h)', unidad: 'm', cantidad: 1, pu: eq },
+        ],
+        varios: [
+          { descripcion: 'Misceláneos (3% materiales)', unidad: 'm', cantidad: 1, pu: miscel },
+        ],
+        __meta: { obs: 'Alcance: Excavación mecánica, cama y recubrimiento con gravilla, tubo dren Ø110 corrugado, envolvente geotextil, relleno y compactación. Ref: GLOBALPLAST CHILE' }
+      }
+    } as any;
+  };
+
+  const buildApuTuberiaPVC110_m = () => {
+    const pvc = Math.round(2331.7);
+    const fittings = 600;
+    const adhesivo = 100;
+    const arena = 945;
+    const mat_sub = pvc + fittings + adhesivo + arena; // ≈ 3977
+    const miscel = Math.round(mat_sub * 0.03); // ≈ 119
+    const mo = Math.round(2421.9);
+    const eq = 600; // 0,03 h/m × 20.000
+    return {
+      id: 'apu_tuberia_pvc_110_m',
+      descripcion: 'Tubería PVC Ø110 sanitaria enterrada',
+      unidadSalida: 'm',
+      categoria: 'Instalaciones sanitarias',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Tubo PVC Ø110 (6 m = 13.990 ⇒ 2.332 CLP/m)', unidad: 'm', cantidad: 1, pu: pvc },
+          { descripcion: 'Fittings prorrateo (codos/tees)', unidad: 'm', cantidad: 1, pu: fittings },
+          { descripcion: 'Adhesivo PVC 240 cc (prorrateo)', unidad: 'm', cantidad: 1, pu: adhesivo },
+          { descripcion: 'Cama de arena (0,03 m³/m × 31.500)', unidad: 'm', cantidad: 1, pu: arena },
+        ],
+        manoObra: [
+          { descripcion: 'Cuadrilla (2 maestros + 1 ayudante; 64 m/jornada)', unidad: 'm', cantidad: 1, pu: mo },
+        ],
+        equipos: [
+          { descripcion: 'Miniexcavadora (0,03 h/m × 20.000 CLP/h)', unidad: 'm', cantidad: 1, pu: eq },
+        ],
+        varios: [
+          { descripcion: 'Misceláneos (3% materiales)', unidad: 'm', cantidad: 1, pu: miscel },
+        ],
+        __meta: { obs: 'Alcance: Zanja, cama de arena, tendido PVC Ø110, uniones, relleno y compactación.' }
+      }
+    } as any;
+  };
+
+  const buildApuFosa3000L_u = () => {
+    const fosa = 489990;
+    const arena = 63000;
+    const sellos = 18990;
+    const mat_sub = fosa + arena + sellos; // 571.980
+    const miscel = 17159;
+    const mo = 77500; // 0,5 j × 155.000
+    const eq = 40000; // 2 h × 20.000
+    return {
+      id: 'apu_fosa_septica_3000l_u',
+      descripcion: 'Fosa séptica 3.000 L instalada',
+      unidadSalida: 'u',
+      categoria: 'Instalaciones sanitarias',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Fosa 3.000 L Bioplastic', unidad: 'u', cantidad: 1, pu: fosa },
+          { descripcion: 'Arena de asiento (2,0 m³ × 31.500)', unidad: 'u', cantidad: 1, pu: arena },
+          { descripcion: 'Kit 4 sellos Ø110', unidad: 'u', cantidad: 1, pu: sellos },
+        ],
+        manoObra: [ { descripcion: 'Cuadrilla (0,5 jornada)', unidad: 'u', cantidad: 1, pu: mo } ],
+        equipos: [ { descripcion: 'Equipo (2 h × 20.000 CLP/h)', unidad: 'u', cantidad: 1, pu: eq } ],
+        varios: [ { descripcion: 'Misceláneos (3% materiales)', unidad: 'u', cantidad: 1, pu: miscel } ],
+        __meta: { obs: 'Alcance: Excavación mecánica, cama de arena, colocación, conexiones Ø110, relleno, prueba hidráulica.' }
+      }
+    } as any;
+  };
+
+  const buildApuCamaraInspeccion_u = () => {
+    const camara = 70990;
+    const elevador = 39990;
+    const adhesivos = 1000;
+    const mat_sub = camara + elevador + adhesivos; // 111.980
+    const miscel = 3359;
+    const mo = 38750; // 0,25 j
+    const eq = 5000; // 0,25 h
+    return {
+      id: 'apu_camara_inspeccion_elevador_u',
+      descripcion: 'Cámara de inspección + elevador',
+      unidadSalida: 'u',
+      categoria: 'Instalaciones sanitarias',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Cámara', unidad: 'u', cantidad: 1, pu: camara },
+          { descripcion: 'Elevador', unidad: 'u', cantidad: 1, pu: elevador },
+          { descripcion: 'Adhesivos', unidad: 'u', cantidad: 1, pu: adhesivos },
+        ],
+        manoObra: [ { descripcion: 'Cuadrilla (0,25 jornada)', unidad: 'u', cantidad: 1, pu: mo } ],
+        equipos: [ { descripcion: 'Equipo (0,25 h × 20.000)', unidad: 'u', cantidad: 1, pu: eq } ],
+        varios: [ { descripcion: 'Misceláneos (3% materiales)', unidad: 'u', cantidad: 1, pu: miscel } ],
+      }
+    } as any;
+  };
+
+  const buildApuCamaraDesgrasadora_u = () => {
+    const equipo = 46390;
+    const adhesivos = 500;
+    const mat_sub = equipo + adhesivos; // 46.890
+    const miscel = 1407;
+    const mo = 38750;
+    const eq = 5000;
+    return {
+      id: 'apu_camara_desgrasadora_100l_u',
+      descripcion: 'Cámara desgrasadora 100 L',
+      unidadSalida: 'u',
+      categoria: 'Instalaciones sanitarias',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Cámara 100 L', unidad: 'u', cantidad: 1, pu: equipo },
+          { descripcion: 'Adhesivos', unidad: 'u', cantidad: 1, pu: adhesivos },
+        ],
+        manoObra: [ { descripcion: 'Cuadrilla (0,25 jornada)', unidad: 'u', cantidad: 1, pu: mo } ],
+        equipos: [ { descripcion: 'Equipo (0,25 h × 20.000)', unidad: 'u', cantidad: 1, pu: eq } ],
+        varios: [ { descripcion: 'Misceláneos (3% materiales)', unidad: 'u', cantidad: 1, pu: miscel } ],
+      }
+    } as any;
+  };
+
+  const buildApuCamaraDistribuidora_u = () => {
+    const equipo = 41290;
+    const adhesivos = 500;
+    const mat_sub = equipo + adhesivos; // 41.790
+    const miscel = 1254;
+    const mo = 38750;
+    const eq = 5000;
+    return {
+      id: 'apu_camara_distribuidora_100l_u',
+      descripcion: 'Cámara distribuidora 100 L',
+      unidadSalida: 'u',
+      categoria: 'Instalaciones sanitarias',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Cámara 100 L', unidad: 'u', cantidad: 1, pu: equipo },
+          { descripcion: 'Adhesivos', unidad: 'u', cantidad: 1, pu: adhesivos },
+        ],
+        manoObra: [ { descripcion: 'Cuadrilla (0,25 jornada)', unidad: 'u', cantidad: 1, pu: mo } ],
+        equipos: [ { descripcion: 'Equipo (0,25 h × 20.000)', unidad: 'u', cantidad: 1, pu: eq } ],
+        varios: [ { descripcion: 'Misceláneos (3% materiales)', unidad: 'u', cantidad: 1, pu: miscel } ],
+      }
+    } as any;
+  };
 
   // APU: Excavar zanja manual (m3)
   const buildApuExcavacionZanjaManual = () => ({
@@ -2490,11 +2632,55 @@ export default function App(){
     window.addEventListener('apu-edit-request', onEditReq as any);
     return ()=> window.removeEventListener('apu-edit-request', onEditReq as any);
   }, [customApus]);
+  // Detecta si un APU está referenciado por alguna partida o subpartida del presupuesto activo
+  const findApuUsages = (apuId: string) => {
+    const refs: Array<{ rowId: string; subId?: string; label: string }> = [];
+    try {
+      for (const r of rows as any[]) {
+        const rIds: string[] = (r?.apuIds && r.apuIds.length)
+          ? (r.apuIds as string[])
+          : (r?.apuId ? [String(r.apuId)] : []);
+        if (rIds.includes(apuId)) {
+          const rowLabel = `${r?.codigo ? r.codigo + ' · ' : ''}${r?.descripcion || 'Partida'}`.trim();
+          refs.push({ rowId: r.id, label: rowLabel });
+        }
+        const subs = Array.isArray(r?.subRows) ? r.subRows : [];
+        for (const s of subs) {
+          const sIds: string[] = Array.isArray(s?.apuIds) ? (s.apuIds as string[]) : [];
+          if (sIds.includes(apuId)) {
+            const subLabel = `${r?.codigo ? r.codigo + ' · ' : ''}${r?.descripcion || 'Partida'} › ${s?.descripcion || 'Subpartida'}`.trim();
+            refs.push({ rowId: r.id, subId: s.id, label: subLabel });
+          }
+        }
+      }
+    } catch {
+      // noop
+    }
+    return refs;
+  };
   const handleDeleteApu = (id:string)=>{
-    if(!isMineById(id)) { showNotification('Este APU es parte de la Biblioteca base y no puede eliminarse','info'); return; }
-    if(!confirm('¿Eliminar este APU?')) return;
-    const next = customApus.filter(x=>x.id!==id);
+    // Impedir borrar si el APU está en uso en el presupuesto activo
+    const refs = findApuUsages(id);
+    if (refs.length > 0) {
+      const lines = refs.slice(0, 6).map(r => `• ${r.label}`);
+      const extra = refs.length > 6 ? `\n… y ${refs.length - 6} referencia(s) más` : '';
+      alert(
+        [
+          'No se puede eliminar este APU porque está en uso en el presupuesto activo.',
+          '',
+          ...lines,
+          extra,
+          '',
+          'Primero elimínalo de esas partidas/subpartidas y vuelve a intentarlo.'
+        ].filter(Boolean).join('\n')
+      );
+      return;
+    }
+    // Confirmar borrado si no está en uso
+    if(!confirm('¿Eliminar este APU de la biblioteca?')) return;
+    const next = (allApus||[]).filter(x=>x.id!==id);
     saveLibrary(next);
+    // Notificación opcional (silenciosa en modo actual)
     showNotification('APU eliminado','info');
   };
   const addBudgetRowWithApu = (apuId:string)=>{
@@ -2670,6 +2856,69 @@ export default function App(){
     const clone = { ...src, id: uid(), order: (typeof src.order === 'number' ? src.order + 1 : undefined) };
     const next = [...rows.slice(0, idx+1), clone, ...rows.slice(idx+1)];
     setRows(next); saveBudget(next); showNotification('Partida duplicada','success');
+  };
+
+  // ====== Multi-presupuestos (trabajar varios presupuestos) ======
+  type BudgetDoc = { id: string; name: string; rows: any[]; chapters: any[]; currentChapterId: string; createdAt: number; updatedAt: number };
+  const [budgetsMap, setBudgetsMap] = useLocalStorage<Record<string, BudgetDoc>>('apu-budgets', {} as Record<string, BudgetDoc>);
+  const [activeBudgetId, setActiveBudgetId] = useLocalStorage<string | null>('apu-active-budget-id', null);
+  const budgetsList = React.useMemo(()=> Object.values(budgetsMap||{}).sort((a,b)=> (b.updatedAt||0)-(a.updatedAt||0)), [budgetsMap]);
+  // Seed inicial si no hay presupuesto activo
+  useEffect(()=>{
+    if(!activeBudgetId){
+      const id = `b_${Date.now()}`;
+      const doc: BudgetDoc = { id, name: 'Borrador', rows: loadBudget()||[], chapters: loadChapters()||[], currentChapterId: (typeof loadCurrentChapter==='function'? loadCurrentChapter(): currentChapterId)||'', createdAt: Date.now(), updatedAt: Date.now() } as any;
+      const next = { ...(budgetsMap||{}), [id]: doc } as Record<string, BudgetDoc>;
+      setBudgetsMap(next);
+      setActiveBudgetId(id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Persistir cambios del presupuesto activo
+  useEffect(()=>{
+    if(!activeBudgetId) return;
+    setBudgetsMap((prev:any)=>{
+      const curr = (prev||{})[activeBudgetId] || { id: activeBudgetId, name: 'Borrador', createdAt: Date.now(), updatedAt: Date.now(), rows: [], chapters: [], currentChapterId: '' };
+      const nextDoc: BudgetDoc = { ...curr, rows, chapters, currentChapterId, updatedAt: Date.now() } as any;
+      return { ...(prev||{}), [activeBudgetId]: nextDoc };
+    });
+  }, [rows, chapters, currentChapterId, activeBudgetId, setBudgetsMap]);
+  const switchBudget = (id:string)=>{
+    const b = (budgetsMap||{})[id]; if(!b) return;
+    setActiveBudgetId(id);
+    setChapters(b.chapters||[]); saveChapters(b.chapters||[]);
+    setRows(b.rows||[]); saveBudget(b.rows||[]);
+    setCurrentChapterId(b.currentChapterId||''); saveCurrentChapter(b.currentChapterId||'');
+    showNotification(`Presupuesto activo: ${b.name||id}`,'info');
+  };
+  const newBudget = (mode:'empty'|'duplicate'='empty')=>{
+    const id = `b_${Date.now()}`;
+    const base = mode==='duplicate' ? { rows, chapters, currentChapterId } : { rows: [], chapters: [], currentChapterId: '' };
+    const nameBase = mode==='duplicate' ? `Copia de ${(budgetsMap[activeBudgetId||'']?.name)||'Borrador'}` : 'Nuevo presupuesto';
+    const doc: BudgetDoc = { id, name: nameBase, createdAt: Date.now(), updatedAt: Date.now(), ...base } as any;
+    setBudgetsMap({ ...(budgetsMap||{}), [id]: doc });
+    switchBudget(id);
+  };
+  const renameBudget = (id:string)=>{
+    const curr = (budgetsMap||{})[id]; if(!curr) return;
+    const val = prompt('Nuevo nombre del presupuesto:', curr.name || '') || curr.name;
+    const upd = { ...curr, name: String(val||'') } as BudgetDoc;
+    setBudgetsMap({ ...(budgetsMap||{}), [id]: upd });
+  };
+  const deleteBudget = (id:string)=>{
+    if(!confirm('¿Eliminar este presupuesto?')) return;
+    const { [id]:_, ...rest } = (budgetsMap||{}) as Record<string, BudgetDoc>;
+    setBudgetsMap(rest);
+    if(activeBudgetId===id){
+      const fallback = Object.keys(rest)[0];
+      if(fallback){ switchBudget(fallback); }
+      else{
+        // Crear vacío y activar
+        const nid = `b_${Date.now()}`; const doc: BudgetDoc = { id: nid, name: 'Borrador', rows: [], chapters: [], currentChapterId: '', createdAt: Date.now(), updatedAt: Date.now() } as any;
+        setBudgetsMap({ [nid]: doc });
+        switchBudget(nid);
+      }
+    }
   };
 
   // Crear rápidamente una partida + subpartida que use el APU vacío (ejemplo)
@@ -2925,6 +3174,62 @@ export default function App(){
     setRows(finalRows); saveBudget(finalRows);
     showNotification('Preset “pisicna” cargado en Presupuesto','success');
   };
+
+  // Preset: Fosa Séptica — crea un presupuesto con partidas sanitarias típicas
+  const loadPresetFosaSeptica = (opts?:{ replace?: boolean })=>{
+    const replace = opts?.replace !== false; // por defecto reemplaza
+    // 1) Crear capítulo único "Fosa séptica y drenaje"
+    const chId = uid();
+    const chapter = { id: chId, letter: 'S', title: 'Fosa séptica y drenaje', subChapters: [] as { id:string; title:string }[] } as any;
+    const chNext = replace ? [chapter] : [...chapters, chapter];
+    setChapters(chNext); saveChapters(chNext); setCurrentChapterId(chId); saveCurrentChapter(chId);
+
+    // 2) Asegurar APUs requeridos en biblioteca
+    const ensureApu = (id:string, builder: ()=>any)=>{
+      let lib = [...customApus];
+      if(!lib.find(a=>a.id===id)){
+        const created = builder();
+        lib = [...lib, created];
+        saveLibrary(lib);
+      }
+      return id;
+    };
+    const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
+    const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
+    const mkSub = (descr:string, unidad:string, qty:number, apuIds:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds, overrideUnitPrice, overrideTotal });
+
+    const apuIds = {
+      dren: ensureApu('apu_dren_infiltracion_m', buildApuDrenInfiltracion_m),
+      pvc110: ensureApu('apu_tuberia_pvc_110_m', buildApuTuberiaPVC110_m),
+      fosa: ensureApu('apu_fosa_septica_3000l_u', buildApuFosa3000L_u),
+      camIns: ensureApu('apu_camara_inspeccion_elevador_u', buildApuCamaraInspeccion_u),
+      camDesg: ensureApu('apu_camara_desgrasadora_100l_u', buildApuCamaraDesgrasadora_u),
+      camDist: ensureApu('apu_camara_distribuidora_100l_u', buildApuCamaraDistribuidora_u),
+    } as const;
+
+    // 3) Construir partidas (cantidades referenciales)
+    const presetRows: any[] = [];
+    chapter.subChapters.push({ id: uid(), title: 'S.1 · Fosa séptica 3.000 L' });
+    presetRows.push(mkRow('Fosa séptica 3.000 L instalada', 'u', 'S.1', [ mkSub('Fosa séptica 3.000 L instalada', 'u', 1, [apuIds.fosa]) ]));
+
+    chapter.subChapters.push({ id: uid(), title: 'S.2 · Cámaras sanitarias' });
+    presetRows.push(mkRow('Cámaras sanitarias', 'u', 'S.2', [
+      mkSub('Cámaras de inspección con elevador', 'u', 2, [apuIds.camIns]),
+      mkSub('Cámara distribuidora 100 L', 'u', 1, [apuIds.camDist]),
+      mkSub('Cámara desgrasadora 100 L', 'u', 1, [apuIds.camDesg]),
+    ]));
+
+    chapter.subChapters.push({ id: uid(), title: 'S.3 · Redes y drenaje' });
+    presetRows.push(mkRow('Redes y drenaje sanitario', 'm', 'S.3', [
+      mkSub('Tubería PVC Ø110 sanitaria enterrada', 'm', 15, [apuIds.pvc110]),
+      mkSub('Dren de infiltración 0,50×0,80 m', 'm', 20, [apuIds.dren]),
+    ]));
+
+    // 4) Persistir presupuesto
+    const finalRows = replace ? presetRows : [...rows, ...presetRows];
+    setRows(finalRows); saveBudget(finalRows);
+    showNotification('Preset “Fosa Séptica” cargado en Presupuesto','success');
+  };
   // Calcula el total directo por partida (respeta overrides y subpartidas)
   const calcRowTotal = (r: any) => {
     if (Array.isArray(r.subRows) && r.subRows.length > 0) {
@@ -2972,6 +3277,38 @@ export default function App(){
   // Modal seleccionar APU para partida sin APU
   const [selectApuOpen, setSelectApuOpen] = useState<{open:boolean; rowId:string|null}>({open:false, rowId:null});
   const [pendingAssignRowId, setPendingAssignRowId] = useState<string|null>(null);
+  // Stick: Planillas (presets)
+  const [planillaSelect, setPlanillaSelect] = useState<string>('');
+  const [planillaModalOpen, setPlanillaModalOpen] = useState<boolean>(false);
+  const [planillaPending, setPlanillaPending] = useState<string>('');
+  const [planillaMode, setPlanillaMode] = useState<'replace'|'append'>('replace');
+  const handlePlanillaSelect = (val:string)=>{
+    if(!val){ setPlanillaSelect(''); return; }
+    setPlanillaPending(val);
+    setPlanillaMode('replace');
+    setPlanillaModalOpen(true);
+  };
+  const confirmLoadPlanilla = ()=>{
+    const val = planillaPending;
+    if(!val){ setPlanillaModalOpen(false); return; }
+    const replace = (planillaMode !== 'append');
+    if(val==='Casa 10×10'){ loadPresetCasa1010({ replace }); }
+    else if(val==='Piscina'){ loadPresetPiscina({ replace }); }
+    else if(val==='Fosa Séptica'){ loadPresetFosaSeptica({ replace }); }
+    // Limpiar selecciones y datos inline de proyecto/usuario
+    try{ setActiveProjectId(null); }catch{}
+    try{ setActiveUserEmail(null); }catch{}
+    try{ setProjectInfo({}); }catch{}
+    setPlanillaSelect('');
+    setPlanillaPending('');
+    setPlanillaModalOpen(false);
+    showNotification(`Planilla "${val}" cargada (${replace? 'reemplazar' : 'agregar'})`,'success');
+  };
+  const cancelLoadPlanilla = ()=>{
+    setPlanillaModalOpen(false);
+    setPlanillaPending('');
+    setPlanillaSelect('');
+  };
   const assignApuToRow = (apuId:string)=>{
     const rowId = selectApuOpen.rowId; if(!rowId) return;
     if(rowId === '__new__'){
@@ -3098,29 +3435,213 @@ export default function App(){
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
-      {notification.show && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg transition-all duration-300 ${
-          notification.type === 'success' ? 'bg-green-600' : 
-          notification.type === 'error' ? 'bg-red-600' : 'bg-blue-600'
-        }`}>
-          <div className="flex items-center gap-2">
-            <span className="text-white font-medium">{notification.message}</span>
-            <button onClick={()=>setNotification({ show:false, message:'', type:'success' })} className="text-white hover:text-gray-200">×</button>
-          </div>
-        </div>
-      )}
+      <NotificationToast notifications={notifications} onDismiss={dismissNotification} />
+
+      {/* Modal para completar información del proyecto al guardar presupuesto */}
+      <ProjectInfoModal
+        open={showProjectInfoModalForSave}
+        onClose={()=> setShowProjectInfoModalForSave(false)}
+        initial={projectModalInitial ?? {
+          nombre: (activeProject?.name || projectInfo?.nombreProyecto || ''),
+          propietario: (activeProject?.client || projectInfo?.propietario || ''),
+          direccion: (projectInfo?.direccion || ''),
+          ciudad: (projectInfo?.ciudad || ''),
+          comuna: (projectInfo?.comuna || ''),
+          fecha: ((activeProject as any)?.fecha || projectInfo?.fecha || ''),
+          plazoDias: ((activeProject as any)?.plazoDias ?? projectInfo?.plazoDias ?? ''),
+        }}
+        onSubmit={(e)=>{
+          e.preventDefault();
+          try{
+            const form = e.currentTarget as HTMLFormElement;
+            const fd = new FormData(form);
+            const nombre = String(fd.get('nombre')||'').trim() || 'Proyecto sin título';
+            const nameChangeAction = newBudgetFlow ? 'create' : String(fd.get('nameChangeAction')||'update');
+            const propietario = String(fd.get('propietario')||'').trim();
+            const direccion = String(fd.get('direccion')||'').trim();
+            const ciudad = String(fd.get('ciudad')||'').trim();
+            const comuna = String(fd.get('comuna')||'').trim();
+            const fecha = String(fd.get('fecha')||'').trim();
+            const plazoDiasVal = Number(fd.get('plazoDias')||'');
+            const location = [direccion, comuna, ciudad].filter(Boolean).join(', ');
+
+            // Actualizar projectInfo local (para consistencia visual)
+            setProjectInfo((prev:any)=>({
+              ...prev,
+              nombreProyecto: nombre,
+              propietario,
+              direccion,
+              ciudad,
+              comuna,
+              fecha,
+              plazoDias: Number.isFinite(plazoDiasVal)? plazoDiasVal : prev?.plazoDias
+            }));
+
+            const proj = activeProject || null;
+            const projectId = proj?.id || null;
+            const activeBName = (activeBudgetId && budgetsMap?.[activeBudgetId]) ? (budgetsMap[activeBudgetId].name || '') : '';
+            // Prefijo solicitado: "Presupuesto · "+nombre del proyecto
+            const budgetName = nombre ? `Presupuesto · ${nombre}` : (activeBName || 'Presupuesto sin título');
+
+            // Guardar snapshot
+            const savedBy = activeUser ? {
+              nombre: activeUser?.nombre || '',
+              email: activeUser?.email || '',
+              telefono: activeUser?.telefono || '',
+              profesion: activeUser?.profesion || ''
+            } : null;
+            // Gestionar presupuesto cuando se elige 'Crear nuevo'
+            let snapshotBudgetId = activeBudgetId || null;
+            // Refs que usará el snapshot
+            let snapRowsRef: any[] = rows;
+            let snapChaptersRef: any[] = chapters;
+            let snapCurrentChapterRef: string = currentChapterId;
+            if (nameChangeAction === 'create') {
+              const newBudgetId = `b_${Date.now()}`;
+              // Para nuevo presupuesto, crear capítulo inicial por defecto
+              const defaultChapter = { id: uid(), letter: 'A', title: 'A — Información general' } as any;
+              const initialRow = { id: uid(), chapterId: defaultChapter.id, codigo: '', descripcion: 'Datos del proyecto', unidadSalida: '', metrados: 0, apuId: null, apuIds: [], subRows: [] } as any;
+              const seedRows = newBudgetFlow ? [initialRow] : [...rows];
+              const seedChapters = newBudgetFlow ? [defaultChapter] : [...chapters];
+              const seedCurrent = newBudgetFlow ? defaultChapter.id : currentChapterId;
+              const newDoc = {
+                id: newBudgetId,
+                name: budgetName,
+                rows: seedRows,
+                chapters: seedChapters,
+                currentChapterId: seedCurrent,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              } as any;
+              setBudgetsMap((prev:any)=> ({ ...(prev||{}), [newBudgetId]: newDoc }));
+              setActiveBudgetId(newBudgetId);
+              snapshotBudgetId = newBudgetId;
+              // Actualizar refs para snapshot
+              snapRowsRef = seedRows;
+              snapChaptersRef = seedChapters;
+              snapCurrentChapterRef = seedCurrent;
+            } else {
+              // Renombrar presupuesto activo (modo update)
+              if(activeBudgetId){
+                setBudgetsMap((prev:any)=>{
+                  const curr = (prev||{})[activeBudgetId];
+                  if(!curr) return prev;
+                  return { ...(prev||{}), [activeBudgetId]: { ...curr, name: budgetName, updatedAt: Date.now() } };
+                });
+              }
+            }
+
+            const snap = {
+              id: uid(),
+              name: budgetName,
+              createdAt: Date.now(),
+              gg, util, iva,
+              projectId,
+              projectInfo,
+              projectName: nombre,
+              client: propietario,
+              location,
+              fecha: fecha || '',
+              plazoDias: Number.isFinite(plazoDiasVal)? plazoDiasVal : undefined,
+              savedBy,
+              savedByEmail: activeUser?.email || null,
+              budgetId: snapshotBudgetId,
+              budgetName: budgetName,
+              currentChapterId: snapCurrentChapterRef,
+              apuLibrary: [...allApus],
+              resourcesSnapshot: { ...resources },
+              sumDirecto: sumDirecto,
+              chapters: snapChaptersRef,
+              rows: snapRowsRef
+            };
+            const curr = ensureArrayProjects(projects);
+            const list = [snap, ...curr];
+            saveProjects(list);
+
+            // Sincronizar stick
+            let nextActiveId: string | null = activeProjectId || null;
+            const createdStickId = nameChangeAction === 'create' ? `p_${Date.now()}` : null;
+            setSavedProjectsList((prev:any[] = [])=>{
+              const norm = (s:string) => (s||'').trim().toLowerCase().replace(/\s+/g,' ');
+              const finalName = nombre;
+              const basePayload = {
+                name: finalName,
+                client: propietario,
+                location,
+                fecha: fecha || '',
+                plazoDias: Number.isFinite(plazoDiasVal) ? plazoDiasVal : undefined,
+                updatedAt: Date.now(),
+                _source: 'from-budget-save'
+              } as any;
+              // Si el usuario eligió "Crear nuevo", siempre crear un nuevo stick y seleccionarlo
+              if (nameChangeAction === 'create' && createdStickId) {
+                const entry = { id: createdStickId, ...basePayload, createdAt: Date.now() };
+                return [...prev, entry];
+              }
+              if(projectId && projectId !== 'inline'){
+                const idxById = prev.findIndex(p => String(p?.id||'') === String(projectId));
+                if(idxById >= 0){
+                  const existing = prev[idxById] || {};
+                  const sameName = norm(existing?.name||'') === norm(finalName);
+                  // No crear nuevo aquí: ya se manejó el caso "create" al inicio
+                  const merged = { ...existing, ...basePayload, id: existing.id, createdAt: existing.createdAt || Date.now() };
+                  const next = [...prev]; next[idxById] = merged;
+                  nextActiveId = merged.id;
+                  return next;
+                }
+              }
+              const idxByName = prev.findIndex(p => norm(p?.name||'') === norm(finalName));
+              if(idxByName >= 0){
+                const existing = prev[idxByName] || {};
+                const merged = { ...existing, ...basePayload, id: existing.id || existing._tempId || `p_${Date.now()}`, createdAt: existing.createdAt || Date.now() };
+                const next = [...prev]; next[idxByName] = merged;
+                nextActiveId = merged.id;
+                return next;
+              }
+              const newId = (projectId && projectId !== 'inline') ? String(projectId) : `p_${Date.now()}`;
+              const entry = { id: newId, ...basePayload, createdAt: Date.now() };
+              nextActiveId = newId;
+              return [...prev, entry];
+            });
+            setActiveProjectId(createdStickId || nextActiveId);
+            if(createdStickId){
+              // Garantizar que el select muestre y cargue el nuevo stick
+              setTimeout(()=>{ try{ handleProjectSelect(createdStickId); }catch{} }, 0);
+            }
+
+            showNotification('Proyecto creado/actualizado y presupuesto guardado','success');
+            setShowProjectInfoModalForSave(false);
+            setNewBudgetFlow(false);
+            setProjectModalInitial(null);
+            setTab('presupuesto');
+          }catch{
+            setShowProjectInfoModalForSave(false);
+            setNewBudgetFlow(false);
+            setProjectModalInitial(null);
+          }
+        }}
+      />
 
       <div className="max-w-6xl mx-auto grid gap-6">
+        {/* Modal minimalista de Usuario */}
+        <UserQuickModal
+          open={userModalOpen}
+          initial={userModalInitial}
+          onClose={()=> setUserModalOpen(false)}
+          onSave={(u)=>{ handleSaveUser(u); setUserModalOpen(false); }}
+        />
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           {/* Encabezado con efecto glitch + logo */}
           <div className="flex-1">
-            <div className="flex items-center gap-5">
-              <GlitchImage src={logoMark} alt="Logo Presupuestos" className="h-[180px] w-[180px] sm:h-[200px] sm:w-[200px] rounded-xl shadow-sm" speed={1} enableOnHover={false} />
+        <div className="flex items-center gap-5">
+          <GlitchImage src={logoMark} alt="Logo Presupuestos" className="h-[180px] w-[180px] sm:h-[200px] sm:w-[200px] rounded-xl shadow-sm" speed={1} enableOnHover={false} />
             {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
             {/* @ts-ignore */}
             {/* GlitchText acepta children como texto a reflejar en data-text */}
             <GlitchText speed={1} enableShadows enableOnHover={false} className="leading-none">
-              PRESUPUESTO
+              {(activeProject?.name || projectInfo?.nombreProyecto)
+                ? `Presupuesto · ${titleCase(activeProject?.name || projectInfo?.nombreProyecto || '')}`
+                : 'Presupuesto'}
             </GlitchText>
             </div>
           </div>
@@ -3150,31 +3671,31 @@ export default function App(){
                 const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const aEl = document.createElement('a'); aEl.href = url; aEl.download = 'presupuesto.csv'; aEl.click(); URL.revokeObjectURL(url);
-              }} className="px-3 py-1 rounded-xl bg-green-700 hover:bg-green-600 text-xs">📊 Exportar CSV</button>
-              <button onClick={()=>{ window.print(); }} className="px-3 py-1 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📊 Exportar CSV</button>
+              <button onClick={()=>{ window.print(); }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
+              <button onClick={()=>{
+                // Inicia flujo de nuevo presupuesto: modal de proyecto vacío y forzar 'create'
+                setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' });
+                setNewBudgetFlow(true);
+                setShowProjectInfoModalForSave(true);
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">+ Nuevo presupuesto</button>
               {/* Botón Importar partidas removido por solicitud */}
               <button onClick={()=>{
-                const name = (projectInfo?.nombreProyecto || prompt('Nombre para guardar este presupuesto:','Presupuesto sin título') || 'Presupuesto sin título').toString();
-                const snap = {
-                  id: uid(),
-                  name,
-                  createdAt: Date.now(),
-                  gg, util, iva,
-                  projectInfo,
-                  // Guardar contexto para poder recalcular valores más adelante
-                  apuLibrary: [...allApus],
-                  resourcesSnapshot: { ...resources },
-                  // Guardar directo al momento del snapshot para mostrar aunque cambie la biblioteca
-                  sumDirecto: sumDirecto,
-                  chapters,
-                  rows
-                };
-                const curr = ensureArrayProjects(projects);
-                const list = [snap, ...curr];
-                saveProjects(list);
-                showNotification('Presupuesto guardado en Proyectos','success');
-                setTab('proyecto');
-              }} className="px-3 py-1 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-xs">💾 Guardar</button>
+                // Resolver fuente de proyecto (selección activa > inline form)
+                const proj = activeProject || null;
+                const locFromForm = [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', ');
+                const projectName = (proj?.name || projectInfo?.nombreProyecto || '').toString();
+                const projectClient = (proj?.client || projectInfo?.propietario || '').toString();
+                const projectLocation = (proj?.location || locFromForm || '').toString();
+                const projectFecha = (proj && 'fecha' in proj) ? (proj as any)?.fecha : (projectInfo?.fecha || '');
+                const projectPlazo = (proj && 'plazoDias' in proj) ? (proj as any)?.plazoDias : projectInfo?.plazoDias;
+                const projectId = proj?.id || null;
+
+                // El nombre del presupuesto será igual al nombre del proyecto (sin prompt)
+                // Abrir modal para completar información del proyecto antes de crear el stick
+                setShowProjectInfoModalForSave(true);
+                return;
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">💾 Guardar</button>
               <button onClick={()=>{
                 if(!confirm('¿Borrar TODO el presupuesto (capítulos y partidas)? Esta acción no se puede deshacer.')) return;
                 try{ localStorage.removeItem('apu-budget'); }catch{}
@@ -3183,18 +3704,18 @@ export default function App(){
                 setRows([]);
                 setChapters([]);
                 setCurrentChapterId('');
-                showNotification('Presupuesto borrado','info');
-              }} className="px-3 py-1 rounded-xl bg-red-800 hover:bg-red-700 text-xs">🗑️ Borrar presupuesto</button>
-              <button onClick={()=>{
-                const mode = prompt('Cargar preset Casa 10×10. Escribe R para REEMPLAZAR el presupuesto o A para AGREGAR al final (R/A):','R')||'R';
-                const replace = (mode.trim().toUpperCase()!=='A');
-                loadPresetCasa1010({ replace });
-              }} className="px-3 py-1 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-xs">🏠 Cargar preset Casa 10×10</button>
-              <button onClick={()=>{
-                const mode = prompt('Cargar preset pisicna. Escribe R para REEMPLAZAR el presupuesto o A para AGREGAR al final (R/A):','R')||'R';
-                const replace = (mode.trim().toUpperCase()!=='A');
-                loadPresetPiscina({ replace });
-              }} className="px-3 py-1 rounded-xl bg-teal-700 hover:bg-teal-600 text-xs">💧 Cargar preset pisicna</button>
+                // Eliminar proyecto del stick si existe y no es inline
+                try{
+                  if(activeProjectId && activeProjectId !== 'inline'){
+                    setSavedProjectsList((prev:any[] = [])=> prev.filter(p => String(p?.id||'') !== String(activeProjectId)));
+                    setActiveProjectId(null);
+                    showNotification('Presupuesto y proyecto del stick borrados','info');
+                  } else {
+                    showNotification('Presupuesto borrado','info');
+                  }
+                }catch{ showNotification('Presupuesto borrado','info'); }
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">🗑️ Borrar presupuesto</button>
+              
               </>
             )}
             {/* Botón de pruebas y badge de demo removidos */}
@@ -3203,154 +3724,11 @@ export default function App(){
 
         {/* Tabs */}
         <div className="flex gap-2 bg-slate-800 p-1 rounded-2xl w-fit">
-          <button onClick={()=>setTab('proyecto')} className={`px-3 py-1 rounded-xl ${tab==='proyecto'?'bg-slate-900':'hover:bg-slate-700'}`}>Proyecto</button>
           <button onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`}>Biblioteca de APU</button>
           <button onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`}>Presupuesto</button>
         </div>
 
-        {/* Sección Proyecto se declara más abajo (bloque corregido) */}
-
-  {tab==='proyecto' && (
-          <>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <h2 className="text-lg font-semibold">Proyecto</h2>
-            </div>
-
-            {/* Formularios directos lado a lado */}
-            <div className="grid md:grid-cols-2 gap-3">
-              {/* Información del Proyecto (simplificado) */}
-              <ProjectInfoForm value={projectInfo||{}} onChange={handleSaveProjectInfo} />
-
-              {/* Creación de Usuarios (simplificado) */}
-              <UserForm
-                value={userForm}
-                onChange={setUserForm}
-                onSubmit={()=>{
-                  if(!userForm.email){ showNotification('Email es obligatorio','error'); return; }
-                  handleSaveUser(userForm);
-                  setUserForm({ nombre:'', email:'', telefono:'', password:'', ciudad:'', tipo:'admin', profesion:'' });
-                }}
-              />
-            </div>
-
-            {/* Tabla de Proyectos (sólo si hay datos) */}
-            {projects.length>0 && (
-              <div className="bg-slate-800 rounded-2xl p-4 shadow">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-300">
-                      <th className="py-2 px-3">Nombre</th>
-                      <th className="py-2 px-3">Fecha</th>
-                      <th className="py-2 px-3">Capítulos</th>
-                      <th className="py-2 px-3">Partidas</th>
-                      <th className="py-2 px-3 text-right">Directo</th>
-                      <th className="py-2 px-3 text-right">Total c/ IVA</th>
-                      <th className="py-2 px-3 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ensureArrayProjects(projects).map((p:any)=>{
-                      const parts = (p.rows||[]).length;
-                      const chs = (p.chapters||[]).length;
-                      const direct = (()=>{
-                        const list = p.rows||[];
-                        // Usar librería y recursos del snapshot si existen; si no, usar actuales
-                        const lib: any[] = Array.isArray(p.apuLibrary) ? p.apuLibrary : allApus;
-                        const resSnap: Record<string, any> = (p.resourcesSnapshot && typeof p.resourcesSnapshot==='object') ? p.resourcesSnapshot : resources;
-                        const getById = (id:string)=> (lib.find(a=>a.id===id) || getApuById(id));
-                        const calc = (r:any)=>{
-                          const qty = Number(r.metrados||0);
-                          const pu = (Array.isArray(r.subRows) && r.subRows.length>0)
-                            ? (r.subRows||[]).reduce((acc:number, s:any)=>{
-                                const sQty = Number(s.metrados || 0);
-                                const sIds: string[] = (Array.isArray(s.apuIds) && s.apuIds.length>0) ? s.apuIds : (s.apuId ? [s.apuId] : []);
-                                const sPu = sIds.reduce((sum:number, id:string)=>{
-                                  try{ return sum + unitCost(getById(id), resSnap).unit; }catch{ return sum; }
-                                }, 0);
-                                const sEffPu = (typeof s.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : sPu;
-                                const sTot = (typeof s.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : (sEffPu * sQty);
-                                return acc + sTot;
-                              }, 0)
-                            : ((r.apuIds||[]).reduce((sum:number, id:string)=>{
-                                try{ return sum + unitCost(getById(id), resSnap).unit; }catch{ return sum; }
-                              }, 0));
-                          const effPu = (typeof r.overrideUnitPrice === 'number' && Number.isFinite(r.overrideUnitPrice)) ? r.overrideUnitPrice : pu;
-                          const total = (typeof r.overrideTotal === 'number' && Number.isFinite(r.overrideTotal)) ? r.overrideTotal : (effPu * qty);
-                          return total;
-                        };
-                        const computed = list.reduce((acc:number, r:any)=> acc + calc(r), 0);
-                        const snapFallback = Number.isFinite(Number(p.sumDirecto)) ? Number(p.sumDirecto) : 0;
-                        return computed>0 ? computed : snapFallback;
-                      })();
-                      // Tasas para cálculo y display (fallback a actuales si faltan en snapshot)
-                      const _g = Number.isFinite(Number(p.gg)) ? Number(p.gg) : gg;
-                      const _u = Number.isFinite(Number(p.util)) ? Number(p.util) : util;
-                      const _iv = Number.isFinite(Number(p.iva)) ? Number(p.iva) : iva;
-                      const totalConIva = (()=>{
-                        const g = Number(_g||0); const u = Number(_u||0); const iv = Number(_iv||0);
-                        const bGGp = direct * g; const bSub1p = direct + bGGp; const bUtilp = bSub1p * u; const bSubtotalp = bSub1p + bUtilp; const bIVAp = bSubtotalp * iv; return bSubtotalp + bIVAp;
-                      })();
-                      const gPct = `${((_g||0)*100).toFixed(1)}%`;
-                      const uPct = `${((_u||0)*100).toFixed(1)}%`;
-                      const iPct = `${((_iv||0)*100).toFixed(1)}%`;
-
-                      return (
-                        <tr key={p.id} className="border-t border-slate-700">
-                          <td className="py-2 px-3">{p.name}</td>
-                          <td className="py-2 px-3">{new Date(p.createdAt||Date.now()).toLocaleString()}</td>
-                          <td className="py-2 px-3">{chs}</td>
-                          <td className="py-2 px-3">{parts}</td>
-                          <td className="py-2 px-3 text-right">{fmt(direct)}</td>
-                          <td className="py-2 px-3 text-right">
-                            <div>{fmt(totalConIva)}</div>
-                            <div className="text-[10px] text-slate-400">GG {gPct} · Util {uPct} · IVA {iPct}</div>
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <div className="inline-flex gap-2">
-                              <button title="Cargar" onClick={()=>{
-                                // Cargar este snapshot en el presupuesto (reemplazar)
-                                const chNext = p.chapters||[];
-                                const rowsNext = p.rows||[];
-                                setChapters(chNext); saveChapters(chNext);
-                                setRows(rowsNext); saveBudget(rowsNext);
-                                setCurrentChapterId(chNext[chNext.length-1]?.id || ''); saveCurrentChapter(chNext[chNext.length-1]?.id || '');
-                                showNotification('Proyecto cargado en Presupuesto','success');
-                                setTab('presupuesto');
-                              }} className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" aria-label="Cargar"><EyeIcon className="h-4 w-4"/></button>
-                              <button title="Imprimir" onClick={()=>{
-                                // Cargar y mandar a imprimir
-                                const chNext = p.chapters||[];
-                                const rowsNext = p.rows||[];
-                                setChapters(chNext); saveChapters(chNext);
-                                setRows(rowsNext); saveBudget(rowsNext);
-                                setCurrentChapterId(chNext[chNext.length-1]?.id || ''); saveCurrentChapter(chNext[chNext.length-1]?.id || '');
-                                setTab('presupuesto');
-                                setTimeout(()=> window.print(), 250);
-                              }} className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" aria-label="Imprimir"><PrinterIcon className="h-4 w-4"/></button>
-                              <button title="Eliminar" onClick={()=>{
-                                if(!confirm('¿Eliminar este proyecto guardado?')) return;
-                                const list = (projects||[]).filter(x=> x.id!==p.id);
-                                saveProjects(list);
-                                showNotification('Proyecto eliminado','info');
-                              }} className="p-2 rounded-lg bg-red-800 hover:bg-red-700 text-xs" aria-label="Eliminar"><TrashIcon className="h-4 w-4"/></button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Usuarios del sistema (sólo si hay datos) */}
-            {Array.isArray(users) && users.length>0 && (
-              <UsersTable users={users} onDelete={handleDeleteUser} />
-            )}
-
-            {/* (Modales removidos para vista directa) */}
-          </>
-        )}
+        {/* Se eliminó la pestaña 'proyecto' y su UI asociada */}
 
   {tab==='biblioteca' && (
           <>
@@ -3393,11 +3771,20 @@ export default function App(){
                   </tr>
                 </thead>
                 <tbody>
-                  
-                  {(libScope==='mine'? customApus : allApus)
-                    .filter(a => !libSearch || (a.descripcion||'').toLowerCase().includes(libSearch.toLowerCase()))
-                    .filter(a => libCategory==='all' || (String(a.categoria||'').trim()===libCategory))
-                    .map((a, i)=> (
+                  {(() => {
+                    const list = (libScope==='mine'? customApus : allApus)
+                      .filter(a => !libSearch || (a.descripcion||'').toLowerCase().includes(libSearch.toLowerCase()))
+                      .filter(a => libCategory==='all' || (String(a.categoria||'').trim()===libCategory));
+                    if(list.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={6} className="py-6 px-3 text-center text-slate-300">
+                            No hay APUs para mostrar con los filtros actuales. Crea uno con “+ Crear nuevo APU” o usa el “Asistente · APU desde texto”.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return list.map((a, i)=> (
                       <React.Fragment key={a.id}>
                         <tr className="border-t border-slate-700">
                           <td className="py-2 px-3">{i+1}</td>
@@ -3415,9 +3802,14 @@ export default function App(){
                               <button onClick={()=>toggleExpandRow(a.id)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60" title="Ver/Editar APU" aria-label="Ver/Editar APU">
                                 <PencilSquareIcon className="h-4 w-4"/>
                               </button>
-                              {isMineById(a.id) && (
-                                <button onClick={()=>handleDeleteApu(a.id)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60" title="Eliminar APU" aria-label="Eliminar APU"><TrashIcon className="h-4 w-4"/></button>
-                              )}
+                              <button
+                                onClick={() => handleDeleteApu(a.id)}
+                                className="p-1 rounded-md border border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700/60"
+                                title="Eliminar APU"
+                                aria-label="Eliminar APU"
+                              >
+                                <TrashIcon className="h-4 w-4"/>
+                              </button>
 
                               {/* Modal Importación */}
                               {importOpen && (
@@ -3434,7 +3826,7 @@ export default function App(){
                                     )}
                                     <div className="flex justify-end gap-2">
                                       <button onClick={()=>setImportOpen(false)} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-                                      <button onClick={handleProcessImport} className="px-3 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Procesar</button>
+                                      <button onClick={handleProcessImport} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Procesar</button>
                                     </div>
                                   </div>
                                 </div>
@@ -3590,7 +3982,7 @@ export default function App(){
                                                 extras.splice(secIdx,1);
                                                 return { ...f, secciones: { ...f.secciones, extras } };
                                               });
-                                            }} className="px-2 py-1 rounded-lg bg-red-700 hover:bg-red-600 text-xs">Eliminar</button>
+                                            }} className="px-2 py-1 rounded-lg border border-slate-600 hover:bg-slate-700/30 text-xs">Eliminar</button>
                                             <button onClick={()=>addFormExtraRow(secIdx)} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">+ Fila</button>
                                           </div>
                                         </div>
@@ -3650,14 +4042,15 @@ export default function App(){
                                 })()}
                                 <div className="flex justify-end gap-2">
                                   <button onClick={()=>{ setExpandedId(null); setExpandedForm(null); }} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-                                  <button onClick={saveExpanded} className="px-3 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Guardar</button>
+                                  <button onClick={saveExpanded} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Guardar</button>
                                 </div>
                               </div>
                             </td>
                           </tr>
                         )}
                       </React.Fragment>
-                    ))}
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -3695,31 +4088,231 @@ export default function App(){
 
         {tab==='presupuesto' && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <h2 className="text-lg font-semibold">Partidas</h2>
-              <div className="flex flex-wrap gap-2">
-                {/* Se eliminó la UI de Plantillas */}
-                <div className="flex items-center gap-2">
-                  <select
-                    className="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm"
-                    value={currentChapterId}
-                    onChange={(e)=>{ setCurrentChapterId(e.target.value); saveCurrentChapter(e.target.value); }}
-                  >
-                    <option value="">Capítulos…</option>
-                    {chapters.map(c=> <option key={c.id} value={c.id}>{c.letter} — {c.title}</option>)}
-                  </select>
-                    <button onClick={addChapter} className="px-3 py-2 bg-slate-700 rounded-xl hover:bg-slate-600 text-sm">+ Capítulo</button>
-                    {currentChapterId && (
-                      <>
-                        <button onClick={()=>renameChapter(currentChapterId)} className="px-3 py-2 bg-slate-700 rounded-xl hover:bg-slate-600 text-sm">Renombrar</button>
-                        <button onClick={()=>deleteChapter(currentChapterId)} className="px-3 py-2 bg-red-700 rounded-xl hover:bg-red-600 text-sm">Eliminar</button>
-                      </>
-                    )}
-                  <button onClick={addRow} className="px-3 py-2 bg-slate-800 rounded-xl hover:bg-slate-700">+ Partida</button>
+            {/* Header de Proyecto/Usuario (sticky) */}
+            <div className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:backdrop-blur bg-slate-900/80 border-b border-slate-800/80 mb-4">
+              <div className="w-full max-w-6xl mx-auto bg-slate-800/60 border border-slate-700 rounded-2xl p-4 m-2 shadow-md grid gap-3">
+                {/* Modal de confirmación para Planillas */}
+                {planillaModalOpen && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="w-[min(520px,95vw)] bg-slate-900 rounded-2xl border border-slate-700 p-4 grid gap-3">
+                      <div className="text-lg font-semibold text-slate-100">Cargar planilla</div>
+                      <div className="text-sm text-slate-300">Vas a cargar la planilla <span className="font-medium">{planillaPending}</span>. ¿Cómo quieres aplicarla?</div>
+                      <div className="grid gap-2">
+                        <label className="inline-flex items-center gap-2 text-slate-200 text-sm">
+                          <input type="radio" name="pl-mode" checked={planillaMode==='replace'} onChange={()=>setPlanillaMode('replace')} />
+                          Reemplazar presupuesto actual
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-slate-200 text-sm">
+                          <input type="radio" name="pl-mode" checked={planillaMode==='append'} onChange={()=>setPlanillaMode('append')} />
+                          Agregar al final del presupuesto
+                        </label>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button onClick={cancelLoadPlanilla} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200">Cancelar</button>
+                        <button onClick={confirmLoadPlanilla} className="px-3 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-white">Confirmar</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="grid md:grid-cols-3 gap-3 items-start md:items-start">
+                  {/* Selector de Proyecto */}
+                  <div className="grid gap-2 min-w-0 text-center">
+                    <div className="flex items-center justify-between w-full">
+                      <h3 className="text-sm font-semibold text-slate-200">Proyecto</h3>
+                      {(() => {
+                        const plz = (activeProject && (activeProject as any).plazoDias) || projectInfo?.plazoDias;
+                        const val = (Number.isFinite(Number(plz)) && Number(plz) > 0) ? String(plz) : '—';
+                        return (
+                          <span className="text-xs text-slate-400">Plazo: {val} días</span>
+                        );
+                      })()}
+                    </div>
+                    <div className="grid gap-2 max-w-full overflow-hidden">
+                      <select
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
+                        value={activeProjectId || ''}
+                        title={`${titleCase(activeProject?.name||'')}${activeProject?.client? ' — '+titleCase(activeProject?.client||''):''}${activeProject?.location? ' — '+titleCase(activeProject?.location||''):''}`}
+                        onChange={(e)=> handleProjectSelect(e.target.value || null)}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {projectsCatalog.map((p:any)=> (
+                          <option key={p.id} value={p.id}>{titleCase(p.name)}{p.client? ` — ${titleCase(p.client)}`:''}{p.location? ` — ${titleCase(p.location)}`:''}</option>
+                        ))}
+                        {/* Opción inline siempre disponible si hay info local */}
+                        {(activeProjectId==='inline' && projectInfo && (projectInfo.nombreProyecto || projectInfo.propietario || projectInfo.direccion || projectInfo.ciudad || projectInfo.comuna)) && (
+                          <option value="inline">{titleCase(projectInfo?.nombreProyecto || 'Proyecto')}{projectInfo?.propietario? ` — ${titleCase(projectInfo?.propietario)}`:''}</option>
+                        )}
+                      </select>
+                      {/* Acción para modificar datos del proyecto (icono) */}
+                      {(
+                        (activeProjectId && activeProjectId !== '')
+                      ) && (
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Modificar datos del proyecto"
+                            aria-label="Modificar datos del proyecto"
+                            onClick={()=> setShowProjectInfoModalForSave(true)}
+                          >
+                            <PencilSquareIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                      {activeProject && (
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-300 max-w-full text-center">
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Nombre:</span>
+                            <span className="inline-block align-bottom break-words" title={titleCase(activeProject.name)}>{titleCase(activeProject.name) || '—'}</span>
+                          </div>
+                          <span className="mx-1 text-slate-500">·</span>
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Cliente:</span>
+                            <span className="inline-block align-bottom break-words" title={titleCase(activeProject.client)}>{titleCase(activeProject.client) || '—'}</span>
+                          </div>
+                          <span className="mx-1 text-slate-500">·</span>
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Ubicación:</span>
+                            <span className="inline-block align-bottom break-words" title={titleCase(activeProject.location)}>{titleCase(activeProject.location) || '—'}</span>
+                          </div>
+                          <span className="mx-1 text-slate-500">·</span>
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Fecha:</span>
+                            <span className="inline-block align-bottom break-words" title={(activeProject as any).fecha || ''}>{(activeProject as any).fecha || '—'}</span>
+                          </div>
+                          {/* Plazo mostrado junto al título arriba */}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Selector de Usuario */}
+                  <div className="grid gap-2 min-w-0 max-w-full text-center">
+                    <div className="flex items-center justify-between w-full">
+                      <h3 className="text-sm font-semibold text-slate-200">Usuario</h3>
+                      <span className="text-xs text-slate-400 truncate max-w-[50%]" title={titleCase(activeUser?.profesion || '')}>Profesión: {titleCase(activeUser?.profesion || '—')}</span>
+                    </div>
+                    <div className="grid gap-2">
+                      <select
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
+                        value={activeUserEmail || ''}
+                        title={activeUser? `${titleCase(activeUser?.nombre||'')}${activeUser?.email? ' — '+activeUser.email:''}`: ''}
+                        onChange={(e)=> setActiveUserEmail(e.target.value || null)}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {users.map((u:any, idx:number)=> (
+                          <option key={u.email || idx} value={u.email || ''}>{titleCase(u.nombre) || u.email || `Usuario ${idx+1}`}</option>
+                        ))}
+                      </select>
+                      {/* Botonera de acciones de usuario */}
+                      <div className="flex items-center justify-center gap-1 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCreateUserQuick}
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Crear usuario"
+                          aria-label="Crear usuario"
+                        >
+                          <UserPlusIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleEditUserQuick}
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Editar usuario seleccionado"
+                          aria-label="Editar usuario seleccionado"
+                        >
+                          <PencilSquareIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteUserQuick}
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Eliminar usuario seleccionado"
+                          aria-label="Eliminar usuario seleccionado"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {activeUser && (
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-300 max-w-full text-center">
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Nombre:</span>
+                            <span className="inline-block align-bottom break-words" title={titleCase(activeUser.nombre)}>{titleCase(activeUser.nombre) || '—'}</span>
+                          </div>
+                          <span className="mx-1 text-slate-500">·</span>
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Email:</span>
+                            <span className="inline-block align-bottom break-words" title={activeUser.email || ''}>{activeUser.email || '—'}</span>
+                          </div>
+                          <span className="mx-1 text-slate-500">·</span>
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Teléfono:</span>
+                            <span className="inline-block align-bottom break-words" title={activeUser.telefono || ''}>{activeUser.telefono || '—'}</span>
+                          </div>
+                          <span className="mx-1 text-slate-500">·</span>
+                          <div className="flex items-baseline whitespace-normal break-words">
+                            <span className="text-slate-400 font-normal mr-1">Profesión:</span>
+                            <span className="inline-block align-bottom break-words" title={titleCase(activeUser.profesion) || ''}>{titleCase(activeUser.profesion) || '—'}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Stick de Planillas (presets) */}
+                  <div className="grid gap-2 min-w-0 text-center">
+                    <div className="flex items-center justify-between w-full">
+                      <h3 className="text-sm font-semibold text-slate-200">Planillas</h3>
+                      <span className="text-xs text-slate-400">Cargar preset</span>
+                    </div>
+                    <div className="grid gap-2 max-w-full overflow-hidden">
+                      <select
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
+                        value={planillaSelect}
+                        onChange={(e)=> handlePlanillaSelect(e.target.value)}
+                      >
+                        <option value="">Seleccionar…</option>
+                        <option value="Casa 10×10">Casa 10×10</option>
+                        <option value="Piscina">Piscina</option>
+                        <option value="Fosa Séptica">Fosa Séptica</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="bg-slate-800 rounded-2xl p-4 shadow">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Contenido principal */}
+              <div className="flex-1 grid gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <h2 className="text-lg font-semibold">
+                    {(activeProject?.name || projectInfo?.nombreProyecto)
+                      ? `Presupuesto · ${titleCase(activeProject?.name || projectInfo?.nombreProyecto || '')}`
+                      : 'Presupuesto'}
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Se eliminó la UI de Plantillas */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm"
+                        value={currentChapterId}
+                        onChange={(e)=>{ setCurrentChapterId(e.target.value); saveCurrentChapter(e.target.value); }}
+                      >
+                        <option value="">Capítulos…</option>
+                        {chapters.map(c=> <option key={c.id} value={c.id}>{c.letter} — {c.title}</option>)}
+                      </select>
+                        <button onClick={addChapter} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">+ Capítulo</button>
+                        {currentChapterId && (
+                          <>
+                            <button onClick={()=>renameChapter(currentChapterId)} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">Renombrar</button>
+                            <button onClick={()=>deleteChapter(currentChapterId)} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">Eliminar</button>
+                          </>
+                        )}
+                      <button onClick={addRow} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40">+ Partida</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-800 rounded-2xl p-4 shadow">
               {/* Vista móvil - Cards por capítulo (se mantiene) */}
               <div className="block lg:hidden space-y-6">
                 {chapters.map(ch=>{
@@ -3920,6 +4513,8 @@ export default function App(){
                 </div>
               </div>
             </div>
+          </div>
+        </div>
           </>
         )}
 
@@ -3997,7 +4592,7 @@ function SelectApuModal({open, onClose, onPick, apus, onCreateNew}:{open:boolean
                       <td className="py-2 px-3">{a.categoria||''}</td>
                       <td className="py-2 px-3">{a.unidadSalida}</td>
                       <td className="py-2 px-3 text-right">
-                        <button onClick={()=>onPick(a.id)} className="px-2 py-1 rounded bg-green-700 hover:bg-green-600 text-xs">Seleccionar</button>
+                        <button onClick={()=>onPick(a.id)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs">Seleccionar</button>
                       </td>
                     </tr>
                   ))}
@@ -4007,12 +4602,13 @@ function SelectApuModal({open, onClose, onPick, apus, onCreateNew}:{open:boolean
           )}
           <div className="flex justify-end gap-2">
             {onCreateNew && (
-              <button onClick={onCreateNew} className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm">+ Crear nuevo APU</button>
+              <button onClick={onCreateNew} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">+ Crear nuevo APU</button>
             )}
             <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600 text-sm">Cerrar</button>
           </div>
         </div>
       </div>
+
     </div>
   );
 }
@@ -4175,11 +4771,11 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
                 });
                 setSectionTitles({});
               }}
-              className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-xs"
+              className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs"
             >
               Borrar todas las secciones
             </button>
-            <button onClick={addExtraSection} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs">+ Agregar sección</button>
+            <button onClick={addExtraSection} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/40 text-xs">+ Agregar sección</button>
             <button onClick={onClose} className="text-slate-300 hover:text-white">×</button>
           </div>
         </div>
@@ -4199,7 +4795,7 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
                       if(!name) return;
                       setSectionTitles(t=> ({ ...t, [s.key]: name }));
                     }} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px]">Renombrar</button>
-                    <button onClick={()=> setFormSecs((f:any)=> ({ ...f, [s.key]: [] }))} className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-[11px]">Eliminar</button>
+                    <button onClick={()=> setFormSecs((f:any)=> ({ ...f, [s.key]: [] }))} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-[11px]">Eliminar</button>
                     <button onClick={()=>addRow(s.key)} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px]">+ Fila</button>
                   </div>
                 </div>
@@ -4249,7 +4845,7 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
                   <div>{sec.title || 'SECCIÓN'}</div>
                   <div className="flex items-center gap-2">
                     <button onClick={()=>renameExtraSection(secIdx)} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px]">Renombrar</button>
-                    <button onClick={()=>deleteExtraSection(secIdx)} className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-[11px]">Eliminar</button>
+                    <button onClick={()=>deleteExtraSection(secIdx)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-[11px]">Eliminar</button>
                     <button onClick={()=>addExtraRow(secIdx)} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px]">+ Fila</button>
                   </div>
                 </div>
@@ -4313,7 +4909,7 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
           </div>
           <div className="flex justify-end gap-2 w-full md:w-auto">
             <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-            <button onClick={()=>onSave({ ...formSecs, __titles: sectionTitles })} className="px-3 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Guardar</button>
+            <button onClick={()=>onSave({ ...formSecs, __titles: sectionTitles })} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Guardar</button>
           </div>
         </div>
         {/* Fin pie */}
@@ -4410,6 +5006,8 @@ function Preview({value, unidad, onUse}){
     </div>
   );
 }
+export default App;
+
 function Seg({on, onClick, children}){
   return (
     <button onClick={onClick} className={`px-3 py-1 rounded-xl border ${on? 'bg-slate-900 border-slate-600' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'}`}>
@@ -4462,7 +5060,7 @@ function ProjectModal({open, initial, onClose, onSave}){
 
 
   return (
-    <Modal open={open} title="Información del Proyecto" onClose={onClose}>
+    <Modal open={open} title="Proyecto" onClose={onClose}>
       <div className="grid gap-3">
         <label className="text-sm text-slate-300 grid gap-1">
           <span>Nombre del Proyecto <span className="text-red-400">*</span></span>
@@ -4551,14 +5149,14 @@ function ProjectModal({open, initial, onClose, onSave}){
           </label>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-red-500/40 text-red-300 hover:border-red-400">Cerrar</button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Cerrar</button>
           <button
             disabled={!canSave}
             aria-disabled={!canSave}
             onClick={()=> canSave && onSave(form)}
-            className={`px-4 py-2 rounded-xl text-white ${canSave? 'bg-green-700 hover:bg-green-600':'bg-green-900/50 cursor-not-allowed'}`}
+            className={`px-4 py-2 rounded-xl text-white ${canSave? 'bg-slate-700 hover:bg-slate-600':'bg-slate-800/60 cursor-not-allowed'}`}
           >
-            Grabar
+            Guardar
           </button>
         </div>
       </div>
@@ -4612,8 +5210,8 @@ function UserModal({open, onClose, onSave}){
           </label>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-red-500/40 text-red-300 hover:border-red-400">Cerrar</button>
-          <button onClick={()=>onSave(form)} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Cerrar</button>
+          <button onClick={()=>onSave(form)} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/30">Guardar</button>
         </div>
       </div>
     </Modal>
@@ -4645,8 +5243,8 @@ function CreateApuModal({open, onClose, onSave, initial}:{open:boolean; onClose:
           <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={form.categoria||''} onChange={e=>setForm({...form, categoria:e.target.value})} />
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-red-500/40 text-red-300 hover:border-red-400">Cerrar</button>
-          <button onClick={()=>onSave({ descripcion: form.descripcion, unidadSalida: form.unidadSalida, categoria: form.categoria||'', items: [], secciones: undefined })} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Cerrar</button>
+          <button onClick={()=>onSave({ descripcion: form.descripcion, unidadSalida: form.unidadSalida, categoria: form.categoria||'', items: [], secciones: undefined })} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/30">Guardar</button>
         </div>
       </div>
     </Modal>
@@ -4869,3 +5467,5 @@ function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolea
     </Modal>
   );
 }
+
+// (Removido) Selector compacto para proyectos guardados: ya no se usa; la carga se hace al seleccionar un proyecto.
