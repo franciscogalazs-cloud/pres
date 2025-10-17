@@ -43,6 +43,19 @@ const normalizeInput = (
 };
 
 export function useNotifications() {
+  // Modo silencioso: desactivar avisos/toasts devolviendo no-ops
+  const disabled = true;
+
+  if (disabled) {
+    const noopId = '';
+    return {
+      notifications: [] as Notification[],
+      showNotification: (_input: NotificationInput, _type?: NotificationSeverity) => noopId,
+      dismissNotification: (_id: string) => {},
+      clearNotifications: () => {},
+    };
+  }
+
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const timersRef = useRef<Map<string, number>>(new Map());
 

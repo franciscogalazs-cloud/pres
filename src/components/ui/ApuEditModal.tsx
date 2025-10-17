@@ -109,14 +109,14 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
           <footer className="flex items-center justify-end gap-3 pt-2">
             <button
               type="submit"
-              className="rounded bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+              className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
-              Grabar
+              Guardar
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded bg-slate-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-600"
+              className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
               Cerrar
             </button>

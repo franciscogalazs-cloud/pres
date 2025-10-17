@@ -4,9 +4,11 @@ import type { ProjectInfo } from '../../types';
 type Props = {
   value: ProjectInfo;
   onChange: (next: ProjectInfo) => void;
+  onSave?: () => void;
+  onClear?: () => void;
 };
 
-export const ProjectInfoForm: React.FC<Props> = ({ value, onChange }) => {
+export const ProjectInfoForm: React.FC<Props> = ({ value, onChange, onSave, onClear }) => {
   const v = value || {};
   const change = (k: keyof ProjectInfo) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.type === 'number' ? Number(e.target.value) || 0 : e.target.value;
@@ -15,7 +17,6 @@ export const ProjectInfoForm: React.FC<Props> = ({ value, onChange }) => {
 
   return (
     <div className="bg-slate-800 rounded-2xl p-4 shadow grid gap-3">
-      <h3 className="font-medium">Información del Proyecto</h3>
       <div className="grid gap-3">
         <div className="grid md:grid-cols-2 gap-3">
           <label className="text-sm text-slate-300 grid gap-1">
@@ -50,6 +51,19 @@ export const ProjectInfoForm: React.FC<Props> = ({ value, onChange }) => {
             <span>Plazo de Ejecución (días)</span>
             <input type="number" className="bg-slate-900 border border-slate-700 rounded-xl p-2" value={v.plazoDias || 0} onChange={change('plazoDias')} />
           </label>
+        </div>
+        <div className="flex items-center justify-between pt-2 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!onClear) return;
+              if (confirm('¿Borrar la información del proyecto?')) onClear();
+            }}
+            className="px-4 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/30 text-slate-200"
+          >
+            Borrar
+          </button>
+          <button type="button" onClick={onSave} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/30">Guardar</button>
         </div>
       </div>
     </div>

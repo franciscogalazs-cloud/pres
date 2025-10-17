@@ -7,65 +7,95 @@ import type { Apu, Resource, UnitCostResult, CostBreakdown, FinancialParams } fr
 // - memo: cacheo de costos por APU para evitar recomputaciones
 // - stack: conjunto para prevenir ciclos (referencias circulares)
 export function unitCost(
-  apu: Apu,
+  apu: Apu | any,
   resources: Record<string, Resource>,
-  apusIndex?: Record<string, Apu>,
+  apusIndex?: Record<string, Apu | any>,
   memo: Map<string, UnitCostResult> = new Map(),
   stack: Set<string> = new Set()
 ): UnitCostResult {
   // Memoization por id
-  if (memo.has(apu.id)) return memo.get(apu.id)!;
+  if (apu && typeof apu.id === 'string' && memo.has(apu.id)) return memo.get(apu.id)!;
   // Prevención de ciclos
-  if (stack.has(apu.id)) {
+  if (apu && typeof apu.id === 'string' && stack.has(apu.id)) {
     // Ciclo detectado: retornamos costo 0 para evitar bucle
     return { unit: 0, desglose: [{ nombre: `Ciclo en ${apu.id}`, costo: 0 }] };
   }
-  stack.add(apu.id);
+  if (apu && typeof apu.id === 'string') stack.add(apu.id);
 
   let total = 0;
   const desglose: Array<{ nombre: string; costo: number }> = [];
 
-  for (const it of apu.items as any[]) {
-    // Caso recurso directo (coef o rendimiento)
-    if (it.tipo === 'coef' || it.tipo === 'rendimiento') {
-      const r = resources[it.resourceId as string];
-      if (!r) continue;
-      let costo = 0;
-      if (it.tipo === 'coef') {
-        const merma = 1 + (it.merma ?? 0);
-        costo = (it.coef ?? 0) * r.precio * merma;
-      } else {
-        // costo por 1 unidad de salida = tarifa / rendimiento
-        costo = r.precio / (it.rendimiento || 1);
-      }
-      desglose.push({ nombre: r.nombre, costo });
-      total += costo;
-      continue;
-    }
+  const apuAny = apu as any;
 
-    // Caso sub-APU compuesto
-    if (it.tipo === 'subapu') {
-      const subId = it.apuRefId as string;
-      const sub = apusIndex?.[subId];
-      if (!sub) {
-        // Si no existe el APU referenciado, lo ignoramos
+  // Ruta 1: APUs clásicos con items (coef/rendimiento/subapu)
+  if (Array.isArray(apuAny?.items)) {
+    for (const it of apuAny.items as any[]) {
+      // Caso recurso directo (coef o rendimiento)
+      if (it.tipo === 'coef' || it.tipo === 'rendimiento') {
+        const r = resources[it.resourceId as string];
+        if (!r) continue;
+        let costo = 0;
+        if (it.tipo === 'coef') {
+          const merma = 1 + (it.merma ?? 0);
+          costo = (it.coef ?? 0) * r.precio * merma;
+        } else {
+          // costo por 1 unidad de salida = tarifa / rendimiento
+          costo = r.precio / (it.rendimiento || 1);
+        }
+        desglose.push({ nombre: r.nombre, costo });
+        total += costo;
         continue;
       }
-      const subRes = unitCost(sub, resources, apusIndex, memo, stack);
-      // Dos formas de consumo: por coeficiente o por rendimiento
-      // - coef: cantidad de sub-APU por 1 unidad de salida
-      // - rendimiento: unidades de salida por 1 unidad de sub-APU
-      const coef = it.coef ?? (it.rendimiento ? 1 / (it.rendimiento as number) : 1);
-      const costo = coef * subRes.unit;
-      desglose.push({ nombre: `SubAPU ${sub.id}`, costo });
-      total += costo;
-      continue;
+
+      // Caso sub-APU compuesto
+      if (it.tipo === 'subapu') {
+        const subId = it.apuRefId as string;
+        const sub = apusIndex?.[subId];
+        if (!sub) {
+          // Si no existe el APU referenciado, lo ignoramos
+          continue;
+        }
+        const subRes = unitCost(sub, resources, apusIndex, memo, stack);
+        // Dos formas de consumo: por coeficiente o por rendimiento
+        const coef = it.coef ?? (it.rendimiento ? 1 / (it.rendimiento as number) : 1);
+        const costo = coef * subRes.unit;
+        desglose.push({ nombre: `SubAPU ${subId}`, costo });
+        total += costo;
+        continue;
+      }
+    }
+  } else if (apuAny && apuAny.secciones) {
+    // Ruta 2: APUs con secciones (materiales/equipos/manoObra/varios/extras)
+    const accRows = (arr: any) => (Array.isArray(arr) ? arr : []) as Array<{ descripcion?: string; unidad?: string; cantidad?: number; pu?: number }>;
+    const secs = apuAny.secciones || {};
+    const allRows: Array<{ descripcion?: string; cantidad?: number; pu?: number }> = [
+      ...accRows(secs.materiales),
+      ...accRows(secs.equipos),
+      ...accRows(secs.manoObra),
+      ...accRows(secs.varios),
+    ];
+    // Extras como arreglo [{title, rows}]
+    if (Array.isArray(secs.extras)) {
+      for (const ex of secs.extras) {
+        allRows.push(...accRows(ex?.rows));
+      }
+    }
+    for (const r of allRows) {
+      const qty = Number(r?.cantidad || 0);
+      const pu = Number(r?.pu || 0);
+      const costo = qty * pu;
+      if (costo > 0) {
+        desglose.push({ nombre: String(r?.descripcion || 'Item'), costo });
+        total += costo;
+      }
     }
   }
 
   const result = { unit: total, desglose };
-  memo.set(apu.id, result);
-  stack.delete(apu.id);
+  if (apu && typeof apu.id === 'string') {
+    memo.set(apu.id, result);
+    stack.delete(apu.id);
+  }
   return result;
 }
 

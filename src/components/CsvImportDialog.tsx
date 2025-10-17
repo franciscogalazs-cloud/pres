@@ -169,8 +169,8 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
           {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
 
           <div className="mt-4 flex justify-end gap-2">
-            <button onClick={onClose} className="rounded-xl bg-slate-200 px-4 py-2 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600">Cancelar</button>
-            <button onClick={handleImport} disabled={!canImport} className={`rounded-xl px-4 py-2 text-white ${canImport ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-500 cursor-not-allowed'}`}>Importar</button>
+            <button onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Cancelar</button>
+            <button onClick={handleImport} disabled={!canImport} className={`rounded-xl px-4 py-2 border ${canImport ? 'border-slate-600 hover:bg-slate-700/30' : 'border-slate-600/40 cursor-not-allowed opacity-60'}`}>Importar</button>
           </div>
         </motion.div>
       </motion.div>

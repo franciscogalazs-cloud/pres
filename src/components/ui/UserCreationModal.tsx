@@ -94,9 +94,9 @@ export const UserCreationModal: React.FC<UserCreationModalProps> = ({
             </button>
             <button
               type="submit"
-              className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+              className="rounded border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-100 transition hover:bg-slate-100 dark:hover:bg-slate-700"
             >
-              Grabar
+              Guardar
             </button>
           </footer>
         </form>

@@ -54,7 +54,7 @@ export const UserForm: React.FC<Props> = ({ value, onChange, onSubmit }) => {
           </label>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onSubmit} className="px-4 py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white">Grabar</button>
+          <button onClick={onSubmit} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/30">Guardar</button>
         </div>
       </div>
     </div>

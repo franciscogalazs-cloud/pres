@@ -1,4 +1,5 @@
 import React, { Fragment } from 'react';
+import { TrashIcon } from '@heroicons/react/24/outline';
 import type { ApuDraft } from './ApuEditModal';
 
 export interface ApuLibraryItem extends ApuDraft {
@@ -22,7 +23,7 @@ interface ApuLibraryTableProps {
 }
 
 const buttonBase =
-  'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition';
+  'inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50';
 
 export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
   items,
@@ -47,11 +48,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className={`${buttonBase} ${
-              filter === 'all'
-                ? 'border-sky-600 bg-sky-50 text-sky-700'
-                : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400'
-            }`}
+            className={`${buttonBase} ${filter === 'all' ? 'ring-1 ring-slate-400' : ''}`}
             onClick={() => onFilterChange('all')}
           >
             <span className="inline-block h-2 w-2 rounded-full bg-sky-600" />
@@ -59,11 +56,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
           </button>
           <button
             type="button"
-            className={`${buttonBase} ${
-              filter === 'mine'
-                ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
-                : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400'
-            }`}
+            className={`${buttonBase} ${filter === 'mine' ? 'ring-1 ring-slate-400' : ''}`}
             onClick={() => onFilterChange('mine')}
           >
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-600" />
@@ -84,7 +77,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
           <button
             type="button"
             onClick={onCreate}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
           >
             <span className="text-lg leading-none">+</span>
             Crear nuevo APU
@@ -129,24 +122,26 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
                     <div className="flex items-center justify-center gap-2">
                       <button
                         type="button"
-                        className="rounded bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-300"
+                        className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
                         onClick={() => onCopy(item)}
                       >
                         📋
                       </button>
                       <button
                         type="button"
-                        className="rounded bg-sky-500 px-2 py-1 text-xs font-semibold text-white transition hover:bg-sky-600"
+                        className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
                         onClick={() => onEdit(item)}
                       >
                         ✎
                       </button>
                       <button
                         type="button"
-                        className="rounded bg-red-500 px-2 py-1 text-xs font-semibold text-white transition hover:bg-red-600"
+                        className="p-1 rounded-md border border-slate-300 text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
                         onClick={() => onDelete(item)}
+                        title="Eliminar APU"
+                        aria-label="Eliminar APU"
                       >
-                        🗑
+                        <TrashIcon className="h-4 w-4" />
                       </button>
                     </div>
                   </td>
@@ -168,7 +163,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
             className={`rounded border px-3 py-1 font-medium transition ${
               isFirst
                 ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400'
+                : 'border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50'
             }`}
             onClick={() => !isFirst && onPageChange(page - 1)}
           >
@@ -182,8 +177,8 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
                   type="button"
                   className={`rounded border px-3 py-1 font-medium transition ${
                     page === pageNumber
-                      ? 'border-sky-600 bg-sky-50 text-sky-700'
-                      : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400'
+                      ? 'ring-1 ring-slate-400'
+                      : 'border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50'
                   }`}
                   onClick={() => onPageChange(pageNumber)}
                 >
@@ -198,7 +193,7 @@ export const ApuLibraryTable: React.FC<ApuLibraryTableProps> = ({
             className={`rounded border px-3 py-1 font-medium transition ${
               isLast
                 ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400'
+                : 'border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50'
             }`}
             onClick={() => !isLast && onPageChange(page + 1)}
           >
