@@ -3639,9 +3639,7 @@ const App: React.FC = () => {
             {/* @ts-ignore */}
             {/* GlitchText acepta children como texto a reflejar en data-text */}
             <GlitchText speed={1} enableShadows enableOnHover={false} className="leading-none">
-              {(activeProject?.name || projectInfo?.nombreProyecto)
-                ? `Presupuesto · ${titleCase(activeProject?.name || projectInfo?.nombreProyecto || '')}`
-                : 'Presupuesto'}
+              PRESUPUESTO
             </GlitchText>
             </div>
           </div>
