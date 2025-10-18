@@ -167,7 +167,7 @@ const App: React.FC = () => {
       if(!exists) return;
       handleProjectSelect(String(assigned), true);
     }catch{}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [activeUserEmail]);
   // APU: Hormigón H-25 hecho en obra (1 m³)
   const buildApuH25Obra = () => {
@@ -249,7 +249,7 @@ const App: React.FC = () => {
         if(seed.length>0){ saveLibrary(seed); }
       }
     }catch{}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   // Migración: asegurar APUs sanitarios en biblioteca aunque ya existan otros
@@ -267,7 +267,7 @@ const App: React.FC = () => {
       const missing = ensure.filter(e => !present.has(e.id)).map(e=> e.build());
       if(missing.length>0){ saveLibrary([...(allApus||[]), ...missing]); }
     }catch{}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   // APU: Muro de ladrillo 1 m² (ladrillo fiscal 29×14×8)
@@ -2484,7 +2484,7 @@ const App: React.FC = () => {
     const used = new Set(ordered.map(a=>a.id));
     const rest = (lib2||[]).filter((a:any)=> !used.has(a.id));
     saveLibrary([ ...ordered, ...rest ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Biblioteca UI state
@@ -2844,7 +2844,7 @@ const App: React.FC = () => {
         setRows(list); saveBudget(list);
       }
     }catch(err){ /* noop */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
   const addRow = ()=>{
     if(!chapters.length){ addChapter(); }
@@ -2883,7 +2883,7 @@ const App: React.FC = () => {
       setBudgetsMap(next);
       setActiveBudgetId(id);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
   // Persistir cambios del presupuesto activo
   useEffect(()=>{
@@ -4688,7 +4688,7 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
     // Títulos personalizados guardados
     const savedTitles = (secciones as any)?.__titles || {};
     setSectionTitles(savedTitles && typeof savedTitles==='object'? savedTitles : {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [apu?.id, open]);
   const updRow = (key:string, idx:number, patch:any)=>{
     setFormSecs((f:any)=>{

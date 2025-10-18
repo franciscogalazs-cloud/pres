@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface CsvImportDialogProps {
@@ -31,13 +31,26 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
   const [error, setError] = useState<string>('');
 
   const rows = useMemo(() => {
+    if (!raw) return [];
     try {
-      if (!raw) return [];
       const parsed = parseCSV(raw.replace(/;/g, delimiter));
       return parsed;
-    } catch (e) {
-      setError('No se pudo parsear el CSV');
+    } catch {
       return [];
+    }
+  }, [raw, delimiter]);
+
+  useEffect(() => {
+    if (!raw) {
+      setError('');
+      return;
+    }
+    try {
+      // Intento de parseo para detectar error
+      parseCSV(raw.replace(/;/g, delimiter));
+      setError('');
+    } catch {
+      setError('No se pudo parsear el CSV');
     }
   }, [raw, delimiter]);
 

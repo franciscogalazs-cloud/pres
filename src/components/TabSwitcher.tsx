@@ -2,8 +2,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import type { TabType } from '../types';
 import { useAnimation, hoverAnimations } from '../contexts/AnimationContext';
-import { useOptimizedDebounce } from '../hooks/performance';
-import { useKeyboardNavigation } from '../hooks/accessibility';
 
 interface TabSwitcherProps {
   activeTab: TabType;

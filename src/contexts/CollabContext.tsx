@@ -132,8 +132,10 @@ export const CollabProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [state, setState] = useState<CollabState>(() => safeParseState());
 
   const channelRef = useRef<BroadcastChannel | null>(null);
-  const userIdRef = useRef<string>(`user-${Math.random().toString(36).slice(2, 7)}`);
-  const usernameRef = useRef<string>(`Usuario ${userIdRef.current.slice(-3)}`);
+  const userId = useMemo(() => `user-${Math.random().toString(36).slice(2, 7)}`, []);
+  const username = useMemo(() => `Usuario ${userId.slice(-3)}`, [userId]);
+  const userIdRef = useRef<string>(userId);
+  const usernameRef = useRef<string>(username);
 
   // Persistencia en localStorage
   useEffect(() => {

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { validateNumber, validateString, ValidationResult } from '../utils/validations';
+import { validateNumber, validateString } from '../utils/validations';
 
 // ====== Input numérico validado ======
 

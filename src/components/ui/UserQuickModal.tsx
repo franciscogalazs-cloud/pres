@@ -6,6 +6,7 @@ type UserDraft = {
   telefono?: string;
   profesion?: string;
   tipo?: 'admin' | 'normal';
+  assignedProjectId?: string;
 };
 
 interface Props {
@@ -13,11 +14,12 @@ interface Props {
   initial?: UserDraft | null;
   onClose: () => void;
   onSave: (user: UserDraft) => void;
+  projects?: Array<{ id: string; name: string; client?: string; location?: string }>;
 }
 
-export const UserQuickModal: React.FC<Props> = ({ open, initial, onClose, onSave }) => {
+export const UserQuickModal: React.FC<Props> = ({ open, initial, onClose, onSave, projects = [] }) => {
   const [v, setV] = React.useState<UserDraft>({
-    nombre: '', email: '', telefono: '', profesion: '', tipo: 'admin'
+    nombre: '', email: '', telefono: '', profesion: '', tipo: 'admin', assignedProjectId: ''
   });
 
   React.useEffect(()=>{
@@ -26,7 +28,8 @@ export const UserQuickModal: React.FC<Props> = ({ open, initial, onClose, onSave
       email: initial?.email || '',
       telefono: initial?.telefono || '',
       profesion: initial?.profesion || '',
-      tipo: (initial?.tipo || 'admin') as 'admin' | 'normal'
+      tipo: (initial?.tipo || 'admin') as 'admin' | 'normal',
+      assignedProjectId: initial?.assignedProjectId || ''
     });
   }, [initial, open]);
 
@@ -70,6 +73,21 @@ export const UserQuickModal: React.FC<Props> = ({ open, initial, onClose, onSave
               Normal
             </label>
           </div>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 grid gap-1">
+            Proyecto asignado
+            <select
+              className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              value={v.assignedProjectId || ''}
+              onChange={(e)=> setV(prev=> ({ ...prev, assignedProjectId: e.target.value }))}
+            >
+              <option value="">(Ninguno)</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {[p.name, p.client, p.location].filter(Boolean).join(' — ')}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800">
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/30">Cerrar</button>

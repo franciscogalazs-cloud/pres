@@ -1,0 +1,7 @@
+dist/
+node_modules/
+frontend/
+public/
+api/
+*.config.js
+vite.config.ts

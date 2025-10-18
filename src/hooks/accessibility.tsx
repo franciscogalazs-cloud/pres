@@ -295,7 +295,8 @@ export const AccessibleInput: React.FC<AccessibleInputProps> = ({
   className = "",
   ...props
 }) => {
-  const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+  const autoIdRef = useRef<string>(`input-${Math.random().toString(36).substr(2, 9)}`);
+  const inputId = id || autoIdRef.current;
   const errorId = error ? `${inputId}-error` : undefined;
   const descriptionId = description ? `${inputId}-description` : undefined;
 
@@ -384,7 +385,8 @@ export const AccessibleSelect: React.FC<AccessibleSelectProps> = ({
   className = "",
   ...props
 }) => {
-  const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
+  const autoIdRef = useRef<string>(`select-${Math.random().toString(36).substr(2, 9)}`);
+  const selectId = id || autoIdRef.current;
   const errorId = error ? `${selectId}-error` : undefined;
   const descriptionId = description ? `${selectId}-description` : undefined;
 

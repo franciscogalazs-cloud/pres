@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useReducer, useCallback, useMemo, useState } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Apu, BudgetRow, Resource } from '../types';
+import type { Apu, BudgetRow } from '../types';
 
 // ====== Tipos para gestión de proyectos ======
 export interface Project {
