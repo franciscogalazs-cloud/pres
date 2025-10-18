@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo Presupuestos - Marca">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e6e0d6"/>
+      <stop offset="100%" stop-color="#b2a99e"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#756d63"/>
+      <stop offset="100%" stop-color="#4b463f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fondo transparente -->
+  <g transform="translate(128,128)">
+    <!-- Engranaje -->
+    <g id="gear">
+      <!-- Anillo -->
+      <circle r="88" fill="url(#metal)"/>
+      <circle r="70" fill="#111827"/>
+      <!-- Dientes -->
+      <g id="tooth" transform="translate(0,-102)">
+        <rect x="-8" y="0" width="16" height="18" rx="2" fill="url(#metal)"/>
+      </g>
+      <use href="#tooth" transform="rotate(22.5)"/>
+      <use href="#tooth" transform="rotate(45)"/>
+      <use href="#tooth" transform="rotate(67.5)"/>
+      <use href="#tooth" transform="rotate(90)"/>
+      <use href="#tooth" transform="rotate(112.5)"/>
+      <use href="#tooth" transform="rotate(135)"/>
+      <use href="#tooth" transform="rotate(157.5)"/>
+      <use href="#tooth" transform="rotate(180)"/>
+      <use href="#tooth" transform="rotate(202.5)"/>
+      <use href="#tooth" transform="rotate(225)"/>
+      <use href="#tooth" transform="rotate(247.5)"/>
+      <use href="#tooth" transform="rotate(270)"/>
+      <use href="#tooth" transform="rotate(292.5)"/>
+      <use href="#tooth" transform="rotate(315)"/>
+      <use href="#tooth" transform="rotate(337.5)"/>
+    </g>
+
+    <!-- Excavadora simplificada -->
+    <g id="excavator" transform="translate(-12,0)">
+      <!-- Orugas -->
+      <rect x="-58" y="34" width="116" height="18" rx="9" fill="url(#shadow)"/>
+      <g fill="#22262e">
+        <rect x="-48" y="46" width="18" height="6" rx="2"/>
+        <rect x="-24" y="46" width="18" height="6" rx="2"/>
+        <rect x="0" y="46" width="18" height="6" rx="2"/>
+        <rect x="24" y="46" width="18" height="6" rx="2"/>
+      </g>
+      <!-- Cabina -->
+      <rect x="-34" y="-8" width="64" height="38" rx="6" fill="url(#metal)"/>
+      <rect x="-26" y="-2" width="28" height="18" rx="3" fill="#0b0f1a"/>
+      <!-- Brazo -->
+      <g fill="url(#metal)">
+        <rect x="24" y="-24" width="14" height="34" rx="4"/>
+        <rect x="34" y="-32" width="12" height="40" rx="3" transform="rotate(-16 40 -12)"/>
+      </g>
+      <!-- Pluma y balde -->
+      <g fill="url(#metal)" transform="translate(64,-28)">
+        <rect x="0" y="-6" width="44" height="12" rx="4" transform="rotate(20)"/>
+        <path d="M50,10 l20,18 c6,6 -2,16 -10,12 l-28,-14 z" fill="url(#metal)"/>
+        <!-- Dientes del balde -->
+        <g fill="#9a9186">
+          <rect x="60" y="35" width="4" height="8" rx="1"/>
+          <rect x="66" y="37" width="4" height="8" rx="1"/>
+          <rect x="72" y="39" width="4" height="8" rx="1"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>
