@@ -8,7 +8,7 @@ import { ProjectInfoModal } from './components/ui/ProjectInfoModal';
 // Eliminado efecto glitch y logo
 import { NotificationToast } from './components/NotificationToast';
 import CurrencyInput from './components/CurrencyInput';
-import { EyeIcon, PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import UserQuickModal from './components/ui/UserQuickModal';
 import BudgetTable from './components/BudgetTable';
 // Nota: Se eliminaron ProjectInfoForm/UserForm/UsersTable al remover la pestaña Proyecto
@@ -3593,7 +3593,6 @@ const App: React.FC = () => {
                 const idxById = prev.findIndex(p => String(p?.id||'') === String(projectId));
                 if(idxById >= 0){
                   const existing = prev[idxById] || {};
-                  const sameName = norm(existing?.name||'') === norm(finalName);
                   // No crear nuevo aquí: ya se manejó el caso "create" al inicio
                   const merged = { ...existing, ...basePayload, id: existing.id, createdAt: existing.createdAt || Date.now() };
                   const next = [...prev]; next[idxById] = merged;
