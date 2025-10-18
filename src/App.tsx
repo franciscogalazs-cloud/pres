@@ -5,8 +5,7 @@ import { unitCost } from './utils/calculations';
 import { useResources } from './hooks/useResources';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { ProjectInfoModal } from './components/ui/ProjectInfoModal';
-import GlitchText from './components/GlitchText';
-import GlitchImage from './components/GlitchImage';
+// Eliminado efecto glitch y logo
 import { NotificationToast } from './components/NotificationToast';
 import CurrencyInput from './components/CurrencyInput';
 import { EyeIcon, PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon } from '@heroicons/react/24/outline';
@@ -25,8 +24,7 @@ const App: React.FC = () => {
     return str.toLowerCase().replace(/\b\p{L}+/gu, w => w.charAt(0).toUpperCase() + w.slice(1));
   };
 
-  // Logo de marca
-  const logoMark = '/brand/logo-presupuestos-mark.svg';
+  // Logo eliminado
 
   // Recursos (catálogo con persistencia)
   const { resources, setResources } = useResources();
@@ -115,7 +113,7 @@ const App: React.FC = () => {
   const projectsCatalog = useMemo(()=> Array.isArray(savedProjectsList)? savedProjectsList : [], [savedProjectsList]);
 
   // Selección de proyecto desde el stick: carga snapshot reciente y sincroniza estado
-  const handleProjectSelect = (pid: string | null) => {
+  const handleProjectSelect = (pid: string | null, skipUserSwitch?: boolean) => {
     if(!pid){ setActiveProjectId(null); return; }
     if(pid==='inline'){ setActiveProjectId('inline'); return; }
     setActiveProjectId(pid);
@@ -133,8 +131,8 @@ const App: React.FC = () => {
       if(typeof snap.gg==='number') setGG(snap.gg);
       if(typeof snap.util==='number') setUtil(snap.util);
       if(typeof snap.iva==='number') setIva(snap.iva);
-      // Usuario activo
-      if(snap.savedByEmail){ setActiveUserEmail(String(snap.savedByEmail)); }
+  // Usuario activo
+  if(snap.savedByEmail && !skipUserSwitch){ setActiveUserEmail(String(snap.savedByEmail)); }
       // Presupuesto/budget
       const rowsNext = Array.isArray(snap.rows)? snap.rows : [];
       const chNext = Array.isArray(snap.chapters)? snap.chapters : [];
@@ -158,6 +156,19 @@ const App: React.FC = () => {
       // Silenciar mensajes al cargar desde stick
     }catch{ /* noop */ }
   };
+
+  // Cuando se selecciona un usuario con proyecto asignado, mostrar ese proyecto automáticamente
+  useEffect(()=>{
+    try{
+      const assigned = (activeUser as any)?.assignedProjectId || '';
+      if(!assigned) return;
+      if(String(activeProjectId||'') === String(assigned)) return;
+      const exists = (projectsCatalog||[]).some((p:any)=> String(p?.id||'')===String(assigned));
+      if(!exists) return;
+      handleProjectSelect(String(assigned), true);
+    }catch{}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUserEmail]);
   // APU: Hormigón H-25 hecho en obra (1 m³)
   const buildApuH25Obra = () => {
     // Mano de obra separada por rol, calculada desde montos mensuales (Indeed Chile),
@@ -3629,19 +3640,13 @@ const App: React.FC = () => {
           initial={userModalInitial}
           onClose={()=> setUserModalOpen(false)}
           onSave={(u)=>{ handleSaveUser(u); setUserModalOpen(false); }}
+          projects={projectsCatalog}
         />
+
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          {/* Encabezado con efecto glitch + logo */}
+          {/* Encabezado simplificado sin logo ni efecto */}
           <div className="flex-1">
-        <div className="flex items-center gap-5">
-          <GlitchImage src={logoMark} alt="Logo Presupuestos" className="h-[180px] w-[180px] sm:h-[200px] sm:w-[200px] rounded-xl shadow-sm" speed={1} enableOnHover={false} />
-            {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-            {/* @ts-ignore */}
-            {/* GlitchText acepta children como texto a reflejar en data-text */}
-            <GlitchText speed={1} enableShadows enableOnHover={false} className="leading-none">
-              PRESUPUESTO
-            </GlitchText>
-            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-slate-100">PRESUPUESTO</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {tab === 'presupuesto' && (
