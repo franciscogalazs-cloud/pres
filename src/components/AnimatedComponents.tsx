@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAnimation, fadeInUp, fadeIn, scaleIn, bounceIn, hoverAnimations } from '../contexts/AnimationContext';
+import { useAnimation, fadeInUp, scaleIn, bounceIn, hoverAnimations } from '../contexts/AnimationContext';
 
 // ====== Botón animado ======
 
