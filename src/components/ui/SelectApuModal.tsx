@@ -1,0 +1,66 @@
+import React from 'react';
+
+export type SelectApuModalProps = {
+  open: boolean;
+  onClose: () => void;
+  onPick: (id: string) => void;
+  apus: any[];
+  onCreateNew?: () => void;
+};
+
+export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNew }: SelectApuModalProps) {
+  const [term, setTerm] = React.useState('');
+  if (!open) return null;
+  const list = (apus || []).filter((a) => !term || String(a.descripcion || '').toLowerCase().includes(term.toLowerCase()));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-slate-800">
+          <h3 className="text-lg font-semibold">Seleccionar APU</h3>
+          <button onClick={onClose} className="text-slate-300 hover:text-white">×</button>
+        </div>
+        <div className="p-4 grid gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-300">Buscar:</span>
+            <input value={term} onChange={(e) => setTerm(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm w-full" placeholder="Descripción del APU" />
+          </div>
+          {list.length === 0 ? (
+            <div className="text-sm text-slate-300">No hay APUs creados para seleccionar. Puedes crear uno nuevo.</div>
+          ) : (
+            <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-700">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-300">
+                    <th className="py-2 px-3">Descripción</th>
+                    <th className="py-2 px-3 w-28">Cat.</th>
+                    <th className="py-2 px-3 w-24">Unidad</th>
+                    <th className="py-2 px-3 w-20"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((a: any) => (
+                    <tr key={a.id} className="border-t border-slate-800 hover:bg-slate-800/60">
+                      <td className="py-2 px-3">{a.descripcion}</td>
+                      <td className="py-2 px-3">{a.categoria || ''}</td>
+                      <td className="py-2 px-3">{a.unidadSalida}</td>
+                      <td className="py-2 px-3 text-right">
+                        <button onClick={() => onPick(a.id)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs">Seleccionar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            {onCreateNew && (
+              <button onClick={onCreateNew} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">+ Crear nuevo APU</button>
+            )}
+            <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600 text-sm">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

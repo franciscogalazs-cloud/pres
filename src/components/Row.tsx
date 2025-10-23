@@ -1,6 +1,6 @@
 import React from "react";
 import CurrencyInput from "./CurrencyInput";
-import { TrashIcon, PencilSquareIcon, DocumentDuplicateIcon, ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, PencilSquareIcon, DocumentDuplicateIcon, ChevronDownIcon, ChevronRightIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
 
 type RowProps = {
   index: number;
@@ -22,20 +22,22 @@ type RowProps = {
 };
 
 export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUpdateSubRow, onRemoveSubRow, onMoveChapter, onDelete, onDuplicate, getApuById, unitCost, resources, fmt, onUpdateRow, onShowApuDetail }: RowProps) {
+  const [rowCollapsed, setRowCollapsed] = React.useState<boolean>(false);
   const [subCollapsed, setSubCollapsed] = React.useState<Record<string, boolean>>({});
   const qty = Number(row.metrados || 0);
   const ids: string[] = row.apuIds?.length ? row.apuIds : (row.apuId ? [row.apuId] : []);
+  const isEmpty = Array.isArray(row.subRows) ? row.subRows.length === 0 : (ids.length === 0);
   const pu = ids.reduce((acc, id) => {
     try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; }
   }, 0);
   const effPu = typeof row.overrideUnitPrice === 'number' && Number.isFinite(row.overrideUnitPrice) ? row.overrideUnitPrice : pu;
-  const total = typeof row.overrideTotal === 'number' && Number.isFinite(row.overrideTotal) ? row.overrideTotal : (effPu * qty);
-  const unitOptions = ['','u','m','m2','m3','kg','jornal','día','hora','gl'];
-  const defaultUnit = row.unidadSalida ?? (ids[0] ? (getApuById(ids[0])?.unidadSalida || '') : '');
+  const _total = typeof row.overrideTotal === 'number' && Number.isFinite(row.overrideTotal) ? row.overrideTotal : (effPu * qty);
+  const _unitOptions = ['','u','m','m2','m3','kg','jornal','día','hora','gl'];
+  const _defaultUnit = row.unidadSalida ?? (ids[0] ? (getApuById(ids[0])?.unidadSalida || '') : '');
 
   return (
     <>
-  <tr className="hover:bg-slate-800/60 text-xs whitespace-nowrap group">
+  <tr className={`hover:bg-slate-800/60 text-xs whitespace-nowrap group ${isEmpty ? 'bg-amber-900/10 ring-1 ring-amber-700/50' : ''}`}>
       {/* # (visual, no editable) */}
       <td className="h-10 px-3 text-center w-10 tabular-nums align-middle">{index + 1}</td>
       {/* Descripción */}
@@ -43,10 +45,10 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
         <button
           aria-label="Agregar subpartida"
           onClick={() => onAddSubRow && onAddSubRow(row.id)}
-          className="w-full h-9 rounded-md bg-transparent border-0 px-3 text-left text-xs min-w-0 truncate focus:outline-none focus:ring-1 focus:ring-cyan-500"
-          title="Agregar subpartida"
+          className={`w-full h-9 rounded-md bg-transparent border-0 px-3 text-left text-xs min-w-0 truncate focus:outline-none focus:ring-1 ${isEmpty ? 'focus:ring-amber-500' : 'focus:ring-cyan-500'}`}
+          title={isEmpty ? 'Partida vacía: agrega una subpartida o APU' : 'Agregar subpartida'}
         >
-          {(row.descripcion?.trim()) || 'Sin nombre'}
+          {(row.descripcion?.trim()) || 'Sin nombre'} {isEmpty && <span className="ml-2 text-amber-300">(vacía)</span>}
         </button>
       </td>
   {/* UN (selector de unidad de la partida) */}
@@ -60,6 +62,14 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
       {/* Acciones */}
       <td className="h-10 px-2 align-middle">
         <div className="flex items-center justify-end gap-1">
+          <button
+            aria-label={rowCollapsed ? 'Mostrar subpartidas y APUs' : 'Ocultar subpartidas y APUs'}
+            title={rowCollapsed ? 'Mostrar subpartidas y APUs' : 'Ocultar subpartidas y APUs'}
+            onClick={() => setRowCollapsed(v => !v)}
+            className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60"
+          >
+            {rowCollapsed ? <EyeIcon className="h-4 w-4"/> : <EyeSlashIcon className="h-4 w-4"/>}
+          </button>
           <button
             aria-label="Renombrar partida"
             title="Renombrar partida"
@@ -92,7 +102,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
         </div>
       </td>
     </tr>
-    {(ids.length > 0) && (
+    {(ids.length > 0 && !rowCollapsed) && (
       <tr className="bg-slate-900/40">
         {/* # columna vacía para alineación */}
         <td className="px-3 w-10"></td>
@@ -143,13 +153,13 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
         {/* Resto de columnas vacías para mantener el layout */}
         <td className="px-3 w-20"></td>
         <td className="px-3 w-24"></td>
-  <td className="px-3 w-36"></td>
-  <td className="px-3 w-40"></td>
+        <td className="px-3 w-36"></td>
+        <td className="px-3 w-40"></td>
         <td className="px-2 w-32"></td>
       </tr>
     )}
     {/* Subpartidas como filas completas */}
-    {(Array.isArray(row.subRows)? row.subRows: []).map((s:any, sIdx:number)=>{
+  {!rowCollapsed && (Array.isArray(row.subRows)? row.subRows: []).map((s:any, sIdx:number)=>{
       const sid = s.id;
       const sQty = Number(s.metrados||0);
       const sIds: string[] = s.apuIds||[];
@@ -167,9 +177,14 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                 aria-label="Seleccionar APU para subpartida"
                 onClick={() => onPickApu(sid)}
                 className="w-full h-9 rounded-md bg-transparent border-0 px-3 text-left text-xs min-w-0 truncate focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                title={(s.descripcion?.trim()) || 'Subpartida'}
+                title={`${(s.descripcion?.trim()) || 'Subpartida'}${sIds.length===0 ? ' — sin APU' : ''}`}
               >
                 <span className="pl-8">{(s.descripcion?.trim()) || 'Subpartida'}</span>
+                {sIds.length === 0 && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-300 text-[10px] align-middle">
+                    sin APU
+                  </span>
+                )}
               </button>
             </td>
             {/* UN subpartida */}
@@ -282,6 +297,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                               onClick={() => {
                                 if (!confirm('¿Quitar este APU de la subpartida?')) return;
                                 const next = sIds.filter(x => x !== id);
+                                // Mantener la subpartida aunque quede vacía: apuIds = []
                                 onUpdateSubRow && onUpdateSubRow(row.id, sid, { apuIds: next });
                               }}
                               className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30"

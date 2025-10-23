@@ -161,21 +161,21 @@ export const FeedbackButton: React.FC<FeedbackButtonProps> = React.memo(({
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const { reducedMotion } = useAnimation();
   
-  const handleClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     if (onAsyncClick) {
       setState('loading');
       try {
         await onAsyncClick();
         setState('success');
         setTimeout(() => setState('idle'), 2000);
-      } catch (error) {
+      } catch {
         setState('error');
         setTimeout(() => setState('idle'), 2000);
       }
     } else if (onClick) {
       onClick(e);
     }
-  }, [onAsyncClick, onClick]);
+  };
   
   const baseStyles = "px-4 py-2 rounded-xl font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
   
@@ -292,9 +292,9 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = React.memo(({
   const [isValid, setIsValid] = useState(false);
   const { reducedMotion } = useAnimation();
   
-  const debounceValidation = useCallback(
-    debounceMs > 0 ? 
-      (value: string) => {
+  const debounceValidation = React.useMemo(() => {
+    if (debounceMs > 0) {
+      return (value: string) => {
         const timeoutId = setTimeout(async () => {
           if (onValidate) {
             setIsValidating(true);
@@ -302,7 +302,7 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = React.memo(({
               const validationError = await onValidate(value);
               setInternalError(validationError);
               setIsValid(!validationError);
-            } catch (err) {
+            } catch {
               setInternalError('Error de validación');
               setIsValid(false);
             } finally {
@@ -310,26 +310,25 @@ export const ValidatedInput: React.FC<ValidatedInputProps> = React.memo(({
             }
           }
         }, debounceMs);
-        
         return () => clearTimeout(timeoutId);
-      } :
-      async (value: string) => {
-        if (onValidate) {
-          setIsValidating(true);
-          try {
-            const validationError = await onValidate(value);
-            setInternalError(validationError);
-            setIsValid(!validationError);
-          } catch (err) {
-            setInternalError('Error de validación');
-            setIsValid(false);
-          } finally {
-            setIsValidating(false);
-          }
+      };
+    }
+    return async (value: string) => {
+      if (onValidate) {
+        setIsValidating(true);
+        try {
+          const validationError = await onValidate(value);
+          setInternalError(validationError);
+          setIsValid(!validationError);
+        } catch {
+          setInternalError('Error de validación');
+          setIsValid(false);
+        } finally {
+          setIsValidating(false);
         }
-      },
-    [onValidate, debounceMs]
-  );
+      }
+    };
+  }, [onValidate, debounceMs]);
   
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

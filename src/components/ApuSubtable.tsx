@@ -13,7 +13,7 @@ type Props = {
   onShowDetail?: (id: string) => void;
 };
 
-export default function ApuSubtable({ apuIds, qty, getApuById, unitCost, resources, fmt, onOpenPicker, onRemoveApu, onShowDetail }: Props) {
+export default function ApuSubtable({ apuIds, /* unused */ qty: _qty, getApuById, /* unused */ unitCost: _unitCost, /* unused */ resources: _resources, /* unused */ fmt: _fmt, onOpenPicker, onRemoveApu, onShowDetail }: Props) {
   if (!apuIds || apuIds.length === 0) return null;
   return (
     <div className="pl-6">

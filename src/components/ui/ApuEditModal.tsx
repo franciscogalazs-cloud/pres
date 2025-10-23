@@ -16,8 +16,8 @@ interface ApuEditModalProps {
 
 const labelCls =
   'text-xs font-semibold uppercase tracking-wide text-slate-600 flex flex-col gap-1';
-const inputCls =
-  'w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500';
+// const inputCls =
+//   'w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500';
 
 export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, onSave }) => {
   const [draft, setDraft] = useState<ApuDraft>({
@@ -69,7 +69,7 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
               Nombre
               <input
                 type="text"
-                className={inputCls}
+                className="w-full rounded px-3 py-2 text-sm bg-white border border-transparent focus:border-transparent focus:ring-0"
                 value={draft.descripcion}
                 onChange={(event) =>
                   setDraft((prev) => ({ ...prev, descripcion: event.target.value }))
@@ -80,13 +80,26 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
 
             <label className={labelCls}>
               Unidad de Medida
-              <input
-                type="text"
-                className={inputCls}
-                value={draft.unidad}
-                onChange={(event) => setDraft((prev) => ({ ...prev, unidad: event.target.value }))}
-                required
-              />
+              {(() => {
+                const commonUnits: string[] = ['m', 'm2', 'm3', 'kg', 'u', 'jornal', 'hora', 'día', 'ml', 'cm', 'mm'];
+                const units: string[] = Array.from(new Set([draft.unidad, ...commonUnits].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+                const listId = 'apu-edit-units';
+                return (
+                  <>
+                    <input
+                      type="text"
+                      list={listId}
+                      className="w-full rounded px-3 py-2 text-sm bg-white border border-transparent focus:border-transparent focus:ring-0"
+                      value={draft.unidad}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, unidad: event.target.value }))}
+                      required
+                    />
+                    <datalist id={listId}>
+                      {units.map((u:string)=> (<option key={u} value={u} />))}
+                    </datalist>
+                  </>
+                );
+              })()}
             </label>
 
             <label className={labelCls}>
@@ -94,7 +107,7 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
               <input
                 type="number"
                 step="0.001"
-                className={inputCls}
+                className="w-full rounded px-3 py-2 text-sm bg-white border border-slate-300 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
                 value={draft.precioUnitario}
                 onChange={(event) =>
                   setDraft((prev) => ({ ...prev, precioUnitario: Number(event.target.value) }))

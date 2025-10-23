@@ -174,6 +174,7 @@ export const useExpensiveOperation = <T, Args extends any[]>(
     error: null,
   });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const memoizedFn = useCallback(fn, deps);
 
   React.useEffect(() => {
@@ -225,6 +226,8 @@ export const useExpensiveOperation = <T, Args extends any[]>(
         clearTimeout(timeoutId);
       }
     };
+  // deps spread está intencional para recalcular por dependencias externas
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memoizedFn, timeout, fallback, ...deps]);
 
   return state;
@@ -333,6 +336,8 @@ export const useIntersectionObserver = (
     return () => {
       observer.disconnect();
     };
+  // El objeto options puede recrearse arriba; observar campos relevantes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.threshold, options.rootMargin, options.root]);
 
   return { ref: elementRef, isIntersecting, entry };

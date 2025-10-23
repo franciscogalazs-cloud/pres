@@ -59,6 +59,58 @@ export const defaultResources: Record<string, Resource> = {
     unidad: "día", 
     precio: 510000 
   },
+  // ==== Recursos adicionales para techumbre, terminaciones e instalaciones ====
+  plancha_zinc_m2: {
+    id: 'plancha_zinc_m2', tipo: 'material', nombre: 'Plancha Zinc Acanalada (m²)', unidad: 'm2', precio: 8990
+  },
+  ceramica_piso_m2: {
+    id: 'ceramica_piso_m2', tipo: 'material', nombre: 'Cerámica piso (m²)', unidad: 'm2', precio: 5990
+  },
+  ceramica_muro_m2: {
+    id: 'ceramica_muro_m2', tipo: 'material', nombre: 'Cerámica muro (m²)', unidad: 'm2', precio: 6990
+  },
+  yeso_carton_m2: {
+    id: 'yeso_carton_m2', tipo: 'material', nombre: 'Yeso-cartón para cielos (m²)', unidad: 'm2', precio: 12000
+  },
+  pintura_latex_20l: {
+    id: 'pintura_latex_20l', tipo: 'material', nombre: 'Pintura Látex interior (20L)', unidad: '20L', precio: 29990
+  },
+  pintura_fachada_20l: {
+    id: 'pintura_fachada_20l', tipo: 'material', nombre: 'Pintura Fachada (20L)', unidad: '20L', precio: 34990
+  },
+  fijaciones_zinc_lote: {
+    id: 'fijaciones_zinc_lote', tipo: 'material', nombre: 'Fijaciones Techo (lote)', unidad: 'gl', precio: 80000
+  },
+  mortero_lechada_lote: {
+    id: 'mortero_lechada_lote', tipo: 'material', nombre: 'Mortero y lechada (lote)', unidad: 'gl', precio: 120000
+  },
+  cable_electrico_lote: {
+    id: 'cable_electrico_lote', tipo: 'material', nombre: 'Cableado eléctrico (lote)', unidad: 'gl', precio: 250000
+  },
+  tablero_electrico_un: {
+    id: 'tablero_electrico_un', tipo: 'material', nombre: 'Tablero eléctrico (unidad)', unidad: 'un', precio: 80000
+  },
+  cajas_electricas_un: {
+    id: 'cajas_electricas_un', tipo: 'material', nombre: 'Cajas y dispositivos (unidad)', unidad: 'un', precio: 2990
+  },
+  canaletas_lote: {
+    id: 'canaletas_lote', tipo: 'material', nombre: 'Tubería/Canaletas (lote)', unidad: 'gl', precio: 70000
+  },
+  artefactos_bano_kit: {
+    id: 'artefactos_bano_kit', tipo: 'material', nombre: 'Artefactos de baño (kit)', unidad: 'gl', precio: 299990
+  },
+  artefactos_cocina_kit: {
+    id: 'artefactos_cocina_kit', tipo: 'material', nombre: 'Artefactos cocina (kit)', unidad: 'gl', precio: 149990
+  },
+  ppr_agua_lote: {
+    id: 'ppr_agua_lote', tipo: 'material', nombre: 'Tuberías PPR agua (lote)', unidad: 'gl', precio: 220000
+  },
+  pvc_desague_lote: {
+    id: 'pvc_desague_lote', tipo: 'material', nombre: 'Tuberías PVC desagüe (lote)', unidad: 'gl', precio: 180000
+  },
+  regulador_gas_lote: {
+    id: 'regulador_gas_lote', tipo: 'material', nombre: 'Cañería gas y regulador (lote)', unidad: 'gl', precio: 120000
+  },
 };
 
 // ====== APUs predefinidos ======
@@ -140,6 +192,101 @@ export const apus: Apu[] = [
       { resourceId: "h25_m3", tipo: "coef", coef: 0.10, merma: 0.03 },
       { resourceId: "jornal_maestro", tipo: "rendimiento", rendimiento: 30 },
       { resourceId: "jornal_ayudante", tipo: "rendimiento", rendimiento: 45 },
+    ],
+  },
+  // ==== Pinturas por m² (interior y fachada) ====
+  {
+    id: 'apu_pintura_interior_m2',
+    descripcion: 'Pintura interior (látex) 2 manos',
+    unidadSalida: 'm2',
+    items: [
+      // Cobertura aproximada: 1 tarro 20L ~ 60 m² (2 manos)
+      { resourceId: 'pintura_latex_20l', tipo: 'rendimiento', rendimiento: 60 },
+      { resourceId: 'jornal_maestro', tipo: 'rendimiento', rendimiento: 120 },
+      { resourceId: 'jornal_ayudante', tipo: 'rendimiento', rendimiento: 180 },
+    ],
+  },
+  {
+    id: 'apu_pintura_fachada_m2',
+    descripcion: 'Pintura fachada 2 manos',
+    unidadSalida: 'm2',
+    items: [
+      // Cobertura aproximada similar a interior
+      { resourceId: 'pintura_fachada_20l', tipo: 'rendimiento', rendimiento: 60 },
+      { resourceId: 'jornal_maestro', tipo: 'rendimiento', rendimiento: 100 },
+      { resourceId: 'jornal_ayudante', tipo: 'rendimiento', rendimiento: 150 },
+    ],
+  },
+  // ==== APUs adicionales: Techumbre y terminaciones (m2) ====
+  {
+    id: 'apu_cubierta_zinc_m2',
+    descripcion: 'Cubierta de zinc acanalado',
+    unidadSalida: 'm2',
+    items: [
+      { resourceId: 'plancha_zinc_m2', tipo: 'coef', coef: 1 },
+      { resourceId: 'fijaciones_zinc_lote', tipo: 'rendimiento', rendimiento: 70 }, // 1 lote para ~70 m2
+      { resourceId: 'jornal_maestro', tipo: 'rendimiento', rendimiento: 30 },
+      { resourceId: 'jornal_ayudante', tipo: 'rendimiento', rendimiento: 45 },
+    ],
+  },
+  {
+    id: 'apu_ceramica_piso_m2',
+    descripcion: 'Instalación cerámica en piso',
+    unidadSalida: 'm2',
+    items: [
+      { resourceId: 'ceramica_piso_m2', tipo: 'coef', coef: 1 },
+      { resourceId: 'mortero_lechada_lote', tipo: 'rendimiento', rendimiento: 60 }, // 1 lote para ~60 m2
+      { resourceId: 'jornal_maestro', tipo: 'rendimiento', rendimiento: 18 },
+      { resourceId: 'jornal_ayudante', tipo: 'rendimiento', rendimiento: 28 },
+    ],
+  },
+  {
+    id: 'apu_ceramica_muro_m2',
+    descripcion: 'Instalación cerámica en muro',
+    unidadSalida: 'm2',
+    items: [
+      { resourceId: 'ceramica_muro_m2', tipo: 'coef', coef: 1 },
+      { resourceId: 'mortero_lechada_lote', tipo: 'rendimiento', rendimiento: 45 }, // 1 lote para ~45 m2
+      { resourceId: 'jornal_maestro', tipo: 'rendimiento', rendimiento: 14 },
+      { resourceId: 'jornal_ayudante', tipo: 'rendimiento', rendimiento: 20 },
+    ],
+  },
+  {
+    id: 'apu_cielo_yeso_m2',
+    descripcion: 'Cielo de yeso-cartón',
+    unidadSalida: 'm2',
+    items: [
+      { resourceId: 'yeso_carton_m2', tipo: 'coef', coef: 1 },
+      { resourceId: 'jornal_maestro', tipo: 'rendimiento', rendimiento: 22 },
+      { resourceId: 'jornal_ayudante', tipo: 'rendimiento', rendimiento: 35 },
+    ],
+  },
+  // ==== APUs adicionales: Instalaciones (global) ====
+  {
+    id: 'apu_inst_electrica_gl',
+    descripcion: 'Instalaciones eléctricas completas',
+    unidadSalida: 'gl',
+    items: [
+      { resourceId: 'cable_electrico_lote', tipo: 'coef', coef: 1 },
+      { resourceId: 'tablero_electrico_un', tipo: 'coef', coef: 1 },
+      { resourceId: 'cajas_electricas_un', tipo: 'coef', coef: 20 },
+      { resourceId: 'canaletas_lote', tipo: 'coef', coef: 1 },
+      { resourceId: 'jornal_maestro', tipo: 'coef', coef: 0.5 },
+      { resourceId: 'jornal_ayudante', tipo: 'coef', coef: 0.5 },
+    ],
+  },
+  {
+    id: 'apu_inst_sanitaria_gl',
+    descripcion: 'Instalaciones sanitarias y gas',
+    unidadSalida: 'gl',
+    items: [
+      { resourceId: 'ppr_agua_lote', tipo: 'coef', coef: 1 },
+      { resourceId: 'pvc_desague_lote', tipo: 'coef', coef: 1 },
+      { resourceId: 'artefactos_bano_kit', tipo: 'coef', coef: 1 },
+      { resourceId: 'artefactos_cocina_kit', tipo: 'coef', coef: 1 },
+      { resourceId: 'regulador_gas_lote', tipo: 'coef', coef: 1 },
+      { resourceId: 'jornal_maestro', tipo: 'coef', coef: 0.5 },
+      { resourceId: 'jornal_ayudante', tipo: 'coef', coef: 0.5 },
     ],
   },
 ];

@@ -105,7 +105,7 @@ const projectManagerReducer = (
 
     case 'DELETE_PROJECT':
       const projectId = action.payload;
-      const { [projectId]: deleted, ...remainingProjects } = state.projects;
+  const { [projectId]: _deleted, ...remainingProjects } = state.projects;
       return {
         ...state,
         projects: remainingProjects,

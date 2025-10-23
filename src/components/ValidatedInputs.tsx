@@ -185,7 +185,7 @@ interface FormValidationStatusProps {
 }
 
 export const FormValidationStatus: React.FC<FormValidationStatusProps> = React.memo(({
-  isValid,
+  isValid: _isValid,
   errors,
   className = ""
 }) => {

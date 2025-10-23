@@ -1,6 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import SelectApuModal from './components/ui/SelectApuModal';
+import { apus as defaultApus } from './data/defaults';
+import Calculator from './components/Calculator';
 import { useNotifications } from './hooks/useNotifications';
 import { uid, fmt, normUnit } from './utils/formatters';
+import { readAliasMap, writeAliasMap, similarityScore, groupSimilarApus } from './utils/match';
+import { applySynonyms } from './data/synonyms';
+import ApuCleanupModal from './components/ui/ApuCleanupModal';
 import { unitCost } from './utils/calculations';
 import { useResources } from './hooks/useResources';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -8,7 +14,7 @@ import { ProjectInfoModal } from './components/ui/ProjectInfoModal';
 // Eliminado efecto glitch y logo
 import { NotificationToast } from './components/NotificationToast';
 import CurrencyInput from './components/CurrencyInput';
-import { PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon, PlusIcon } from '@heroicons/react/24/outline';
 import UserQuickModal from './components/ui/UserQuickModal';
 import BudgetTable from './components/BudgetTable';
 // Nota: Se eliminaron ProjectInfoForm/UserForm/UsersTable al remover la pestaña Proyecto
@@ -16,7 +22,7 @@ import BudgetTable from './components/BudgetTable';
 const App: React.FC = () => {
   const { notifications, showNotification, dismissNotification } = useNotifications();
   // Estado de pestañas (Proyecto eliminado)
-  const [tab, setTab] = useState<'biblioteca'|'presupuesto'>('presupuesto');
+  const [tab, setTab] = useState<'biblioteca'|'presupuesto'|'calculadora'>('presupuesto');
 
   // Utilidad local para capitalizar títulos (usado en tooltips del header)
   const titleCase = (s?: string): string => {
@@ -29,10 +35,203 @@ const App: React.FC = () => {
   // Recursos (catálogo con persistencia)
   const { resources, setResources } = useResources();
 
+  
+
   // Parámetros financieros (persistidos)
   const [gg, setGG] = useLocalStorage<number>('apu-gg', 0.18);
   const [util, setUtil] = useLocalStorage<number>('apu-util', 0.20);
   const [iva, setIva] = useLocalStorage<number>('apu-iva', 0.19);
+
+  // Crear preset "fosa" a nivel de App (para no depender del montaje de Calculadora)
+  const ensureFosaSnapshot = React.useCallback(() => {
+    try {
+      const name = 'fosa';
+      const key = `calculator-save:${encodeURIComponent(name)}`;
+      const now = Date.now();
+      const calcManualId = 'calc_manual';
+      const metros = 60; // default
+      const calidad = 1.0; const techo = 0.7; const piso = 1.0; const includeIvaInM2 = true;
+      const volExcav = Math.max(3, Math.round((metros || 0) * 0.06));
+      const losaM2 = 3;
+      const items = [
+        { id: `user_${calcManualId}_${now}_1`, descripcion: 'Excavación para fosa séptica', unidadSalida: 'm3', metrados: volExcav, apuIds: ['apu_exc_zanja_manual'] },
+        { id: `user_${calcManualId}_${now}_2`, descripcion: 'Fosa séptica prefabricada 3.000 L', unidadSalida: 'u', metrados: 1, apuIds: ['apu_fosa_septica_3000l_u'] },
+        { id: `user_${calcManualId}_${now}_3`, descripcion: 'Relleno y compactación alrededor de fosa', unidadSalida: 'm3', metrados: volExcav, apuIds: ['apu_relleno_compact_manual'] },
+        { id: `user_${calcManualId}_${now}_4`, descripcion: 'Cámara de inspección', unidadSalida: 'u', metrados: 1, apuIds: ['apu_camara_inspeccion_elevador_u'] },
+        { id: `user_${calcManualId}_${now}_5`, descripcion: 'Losa de hormigón para tapa de fosa', unidadSalida: 'm2', metrados: losaM2, apuIds: ['apu_radier_h25_10cm_malla_polietileno'] },
+        { id: `user_${calcManualId}_${now}_6`, descripcion: 'Conexiones y tuberías sanitarias hacia fosa', unidadSalida: 'gl', metrados: 1, apuIds: ['apu_inst_sanit_gas_lote'] },
+      ];
+      const existing = localStorage.getItem(key);
+      if (existing) {
+        try {
+          const snap = JSON.parse(existing || 'null');
+          const arr = (snap && snap.userSubRows && Array.isArray(snap.userSubRows[calcManualId])) ? snap.userSubRows[calcManualId] : [];
+          if (!arr || arr.length === 0) {
+            const patched = {
+              ...snap,
+              userSubRows: { ...(snap.userSubRows || {}), [calcManualId]: items },
+              rowDescOverrides: { ...(snap.rowDescOverrides || {}), [calcManualId]: 'Fosa séptica' },
+              savedAt: now,
+            };
+            localStorage.setItem(key, JSON.stringify(patched));
+            const idxKey = 'calculator-saves-index-v1';
+            const idx = (()=>{ try{ return JSON.parse(localStorage.getItem(idxKey)||'[]')||[]; }catch{ return []; }})();
+            const next = Array.isArray(idx) ? idx.filter((x:any)=> x && x.name !== name) : [];
+            next.unshift({ name, savedAt: now });
+            localStorage.setItem(idxKey, JSON.stringify(next.slice(0,30)));
+          }
+        } catch {}
+        return;
+      }
+      const payload = {
+        v: 1,
+        name,
+        savedAt: now,
+        metros,
+        calidad,
+        techo,
+        piso,
+        includeIvaInM2,
+        rowDescOverrides: { ['calc_manual']: 'Fosa séptica' },
+        subOverrides: {},
+        userSubRows: { [calcManualId]: items },
+        hiddenSubIds: {},
+        gg,
+        util,
+        iva,
+      };
+      localStorage.setItem(key, JSON.stringify(payload));
+      try {
+        const idxKey = 'calculator-saves-index-v1';
+        const idx = (()=>{ try{ return JSON.parse(localStorage.getItem(idxKey)||'[]')||[]; }catch{ return []; }})();
+        const next = Array.isArray(idx) ? idx.filter((x:any)=> x && x.name !== name) : [];
+        next.unshift({ name, savedAt: now });
+        localStorage.setItem(idxKey, JSON.stringify(next.slice(0,30)));
+      } catch {}
+    } catch {}
+  }, [gg, util, iva]);
+
+  // Al montar, preparar el preset fosa y abrir directamente la Calculadora una vez
+  useEffect(() => {
+    try {
+      const flag = 'calc-switch-to-calculadora-once';
+      if (!localStorage.getItem(flag)) {
+        ensureFosaSnapshot();
+        setTab('calculadora');
+        localStorage.setItem(flag, 'done');
+      }
+    } catch {}
+  }, [ensureFosaSnapshot]);
+
+  // ===== Biblioteca de APUs (persistida) =====
+  // Librería principal guardada en localStorage bajo la clave 'apu-library'
+  const [customApus, setCustomApus] = useLocalStorage<any[]>('apu-library', []);
+  // allApus: por ahora coincide con customApus; se deja memorizado por performance
+  const allApus = useMemo(()=> Array.isArray(customApus) ? customApus : [], [customApus]);
+  // Guardar biblioteca con renumeración simple de códigos 01-XXX (si falta)
+  const saveLibrary = React.useCallback((list: any[]) => {
+    const arr = Array.isArray(list) ? list : [];
+    const next = arr.map((apu, idx) => {
+      const codigo = apu?.codigo || `01-${String(idx + 1).padStart(3, '0')}`;
+      return { ...apu, codigo };
+    });
+    setCustomApus(next);
+    try { localStorage.setItem('apu-library', JSON.stringify(next)); } catch {}
+  }, [setCustomApus]);
+  // Búsqueda de APU por ID: primero biblioteca personalizada, luego catálogo por defecto
+  const getApuById = React.useCallback((id: string) => {
+    const aliases = readAliasMap();
+    const key0 = String(id||'');
+    const key = aliases[key0] || key0;
+    const apuCustom = (allApus || []).find(a => String(a?.id||'') === key);
+    if (apuCustom) return apuCustom;
+    const apuDefault = (defaultApus || []).find((a:any) => String(a?.id||'') === key);
+    if (apuDefault) return apuDefault;
+    throw new Error('APU no encontrado');
+  }, [allApus]);
+
+  // Borrar APUs que digan "subpartida" en la descripción (sólo de la biblioteca de usuario)
+  const _purgeSubpartidaApus = React.useCallback(() => {
+    try {
+      const list = Array.isArray(allApus) ? allApus : [];
+      const toRemove = list.filter((a:any)=> String(a?.descripcion||'').toLowerCase().includes('subpartida'));
+      if (toRemove.length === 0) { showNotification('No hay APUs con "subpartida"','info'); return; }
+      if (!confirm(`¿Eliminar ${toRemove.length} APU(s) cuya descripción contiene "subpartida"? Esta acción no se puede deshacer.`)) return;
+      const next = list.filter((a:any)=> !String(a?.descripcion||'').toLowerCase().includes('subpartida'));
+      saveLibrary(next);
+      showNotification(`Eliminados ${toRemove.length} APUs con "subpartida"`,'success');
+    } catch { showNotification('Error al eliminar APUs','error'); }
+  }, [allApus, saveLibrary, showNotification]);
+
+  // Borrar APUs duplicados (similares por trigramas y misma unidad)
+  const _purgeDuplicateApus = React.useCallback(() => {
+    try {
+      const list = Array.isArray(allApus) ? allApus : [];
+      const groups = groupSimilarApus(list as any, { threshold: 0.44, sameUnit: true });
+      if (!groups.length) { showNotification('No se detectaron grupos de duplicados','info'); return; }
+      const totalDup = groups.reduce((acc, g) => acc + Math.max(0, g.ids.length - 1), 0);
+      if (!confirm(`Se encontraron ${groups.length} grupo(s) con ${totalDup} duplicado(s) potencial(es). ¿Eliminar duplicados manteniendo 1 por grupo?`)) return;
+      const alias = readAliasMap();
+      const dupIds = new Set<string>();
+      for (const g of groups) {
+        const keep = g.ids[0];
+        for (let i = 1; i < g.ids.length; i++) { const id = g.ids[i]; dupIds.add(id); alias[id] = keep; }
+      }
+      writeAliasMap(alias);
+      const next = list.filter((a:any) => !dupIds.has(a.id));
+      saveLibrary(next);
+      showNotification(`Eliminados ${dupIds.size} APUs duplicados (se actualizaron alias)`, 'success');
+    } catch { showNotification('Error al eliminar duplicados','error'); }
+  }, [allApus, saveLibrary, showNotification]);
+
+  // ===== Snapshots de proyectos (stick) =====
+  // Se almacenan snapshots (histórico) para cargar estado completo de un proyecto desde el stick
+  const [projects, setProjects] = useLocalStorage<any[]>('apu-projects', []);
+  const ensureArrayProjects = React.useCallback((p: any): any[] => {
+    if (Array.isArray(p)) return p;
+    if (p && Array.isArray(p.items)) return p.items;
+    return [];
+  }, []);
+  const saveProjects = React.useCallback((list: any[]) => {
+    const arr = Array.isArray(list) ? list : [];
+    setProjects(arr);
+    try { localStorage.setItem('apu-projects', JSON.stringify(arr)); } catch {}
+  }, [setProjects]);
+
+  // Navegar a Calculadora cuando se inyecta un APU desde la biblioteca
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === 'calculator-inject' && e.newValue) setTab('calculadora');
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, []);
+
+  // Ejecución única: fusionar y borrar APUs duplicados (solicitud del usuario)
+  useEffect(()=>{
+    try{
+      const flagKey = 'apu-dup-cleanup-run';
+      if(localStorage.getItem(flagKey)==='done') return;
+      const list = Array.isArray(allApus) ? allApus : [];
+      if(!list.length) { localStorage.setItem(flagKey,'done'); return; }
+      const groups = groupSimilarApus(list as any, { threshold: 0.44, sameUnit: true }) || [];
+      if(!groups.length){ localStorage.setItem(flagKey,'done'); return; }
+      const alias = readAliasMap();
+      const dupIds = new Set<string>();
+      for(const g of groups){
+        if(!g?.ids?.length) continue;
+        const keep = g.ids[0];
+        for(let i=1;i<g.ids.length;i++){ const id = g.ids[i]; dupIds.add(id); alias[id] = keep; }
+      }
+      writeAliasMap(alias);
+      const next = list.filter((a:any)=> !dupIds.has(a.id));
+      if(next.length !== list.length){ saveLibrary(next); showNotification(`Fusión completa: ${list.length-next.length} duplicado(s) removido(s)`, 'success'); }
+      localStorage.setItem(flagKey,'done');
+    }catch{ /* noop */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Catálogo para selects: usa la lista del stick ya existente
+  // Nota: projectsCatalog se declara más abajo, después de savedProjectsList
 
   // Info de proyecto inline (cuando no hay uno del stick activo)
   const loadProjectInfo = () => { try { return JSON.parse(localStorage.getItem('apu-project') || '{}'); } catch { return {}; } };
@@ -43,6 +242,7 @@ const App: React.FC = () => {
   const [savedProjectsList, setSavedProjectsList] = useLocalStorage<any[]>('apu-projects-list', []);
   const [activeProjectId, setActiveProjectId] = useLocalStorage<string | null>('apu-active-project-id', null);
   const activeProject = useMemo(()=> (savedProjectsList||[]).find(p => String(p?.id||'') === String(activeProjectId||'')) || null, [savedProjectsList, activeProjectId]);
+  const projectsCatalog = useMemo(() => Array.isArray(savedProjectsList) ? savedProjectsList : [], [savedProjectsList]);
 
   // Usuarios simples + usuario activo
   const loadUsers = () => { try{ return JSON.parse(localStorage.getItem('apu-users')||'[]')||[]; }catch{ return []; } };
@@ -67,10 +267,39 @@ const App: React.FC = () => {
   };
 
 
-  const handleDeleteUser = (email:string) => {
+  const _handleDeleteUser = (email:string) => {
     setUsers((prev:any[] = [])=> prev.filter(u => String(u?.email||'') !== String(email||'')));
     if(activeUserEmail === email){ setActiveUserEmail(null); }
   };
+
+  // Estado modal de Proyecto y flujo de nuevo presupuesto
+  const [showProjectInfoModalForSave, setShowProjectInfoModalForSave] = useState(false);
+  const [projectModalInitial, setProjectModalInitial] = useState<any|null>(null);
+  const [newBudgetFlow, setNewBudgetFlow] = useState(false);
+
+  // Acciones rápidas: eliminar proyecto del stick actual
+  const handleDeleteProjectQuick = React.useCallback(() => {
+    try{
+      const pid = activeProjectId;
+      if(!pid || pid==='inline') return;
+      if(!confirm('¿Eliminar el proyecto seleccionado del listado?')) return;
+      setSavedProjectsList((prev:any[] = [])=> prev.filter(p => String(p?.id||'') !== String(pid)));
+      if(activeProjectId === pid){ setActiveProjectId(null); }
+      showNotification('Proyecto eliminado del listado','info');
+    }catch{}
+  }, [activeProjectId, setActiveProjectId, setSavedProjectsList, showNotification]);
+
+  // Acciones rápidas: eliminar usuario activo del listado
+  const handleDeleteUserQuick = React.useCallback(() => {
+    try{
+      const email = activeUserEmail;
+      if(!email) return;
+      if(!confirm('¿Eliminar el usuario seleccionado?')) return;
+      setUsers((prev:any[] = [])=> prev.filter(u => String(u?.email||'') !== String(email)));
+      setActiveUserEmail(null);
+      showNotification('Usuario eliminado','info');
+    }catch{}
+  }, [activeUserEmail, setUsers, setActiveUserEmail, showNotification]);
 
   // Modal minimalista de usuario
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -81,156 +310,452 @@ const App: React.FC = () => {
     setUserModalInitial(activeUser);
     setUserModalOpen(true);
   };
-  const handleDeleteUserQuick = () => {
-    if(!activeUser){ showNotification('Selecciona un usuario para eliminar','info'); return; }
-    if(confirm(`¿Eliminar al usuario "${activeUser?.nombre||activeUser?.email||''}"?`)){
-      handleDeleteUser(String(activeUser?.email||''));
-      showNotification('Usuario eliminado','info');
+
+  // APU: Tablero eléctrico monofásico (unidad)
+  const buildApuTableroElectricoMonofasico = () => ({
+    id: 'apu_tablero_electrico_monofasico_u',
+    descripcion: 'Tablero eléctrico monofásico 12 polos',
+    unidadSalida: 'u',
+    categoria: 'Eléctrica',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Tablero 12/24 polos', unidad: 'u', cantidad: 1, pu: 45000 },
+        { descripcion: 'Protecciones y riel', unidad: 'u', cantidad: 1, pu: 35000 },
+        { descripcion: 'Caja y accesorios', unidad: 'u', cantidad: 1, pu: 15000 },
+      ],
+      manoObra: [ { descripcion: 'Montaje y conexionado', unidad: 'u', cantidad: 1, pu: 30000 } ],
+      equipos: [],
+      varios: [],
     }
-  };
+  } as any);
 
-  // Estado modal de guardado de proyecto
-  const [showProjectInfoModalForSave, setShowProjectInfoModalForSave] = useState(false);
-  // Flujo especial: crear nuevo presupuesto (stick nuevo y budget en blanco)
-  const [newBudgetFlow, setNewBudgetFlow] = useState(false);
-  const [projectModalInitial, setProjectModalInitial] = useState<any|null>(null);
+  // APU: Toma/interruptor (unidad)
+  const buildApuTomaInterruptorU = () => ({
+    id: 'apu_toma_interruptor_u',
+    descripcion: 'Toma o interruptor (unidad)',
+    unidadSalida: 'u',
+    categoria: 'Eléctrica',
+    codigoExterno: '',
+    secciones: {
+      materiales: [ { descripcion: 'Placa + mecanismo', unidad: 'u', cantidad: 1, pu: 5500 } ],
+      manoObra: [ { descripcion: 'Instalación punto', unidad: 'u', cantidad: 1, pu: 3500 } ],
+      equipos: [],
+      varios: [],
+    }
+  } as any);
 
-  // ===== Biblioteca de APUs (persistencia simple en localStorage) =====
-  const readLibrary = () => { try{ return JSON.parse(localStorage.getItem('apu-library')||'[]'); }catch{ return []; } };
-  const [allApus, setAllApus] = useState<any[]>(()=> readLibrary());
-  useEffect(()=>{ try{ localStorage.setItem('apu-library', JSON.stringify(allApus||[])); }catch{} }, [allApus]);
-  const customApus = allApus;
-  const saveLibrary = (list:any[])=>{ setAllApus(list||[]); try{ localStorage.setItem('apu-library', JSON.stringify(list||[])); }catch{} };
-  const getApuById = (id:string)=>{ const a = (allApus||[]).find((x:any)=> x.id===id); if(a) return a; throw new Error('APU no encontrado'); };
+  // APU: Movimiento de Tierras y Excavación (lote)
+  const buildApuMovimientoTierrasExcavacionLote = () => ({
+    id: 'apu_mov_tierras_excavacion_lote',
+    descripcion: 'Movimiento de Tierras y Excavación (preparación de terreno)',
+    unidadSalida: 'lote',
+    categoria: 'Movimiento de tierras',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Movimiento de tierra (nivelación y excavación para fundaciones)', unidad: 'lote', cantidad: 1, pu: 150000 },
+        { descripcion: 'Material de relleno y compactación (arena, grava)', unidad: 'm3', cantidad: 5, pu: 25000 },
+      ],
+      manoObra: [],
+      equipos: [],
+      varios: [],
+    }
+  } as any);
 
-  // ===== Snapshots de proyectos (para impresión/carga) =====
-  const loadProjects = () => { try{ return JSON.parse(localStorage.getItem('apu-projects')||'[]'); }catch{ return []; } };
-  const [projects, setProjects] = useState<any[]>(loadProjects);
-  const saveProjects = (list:any[])=>{ try{ localStorage.setItem('apu-projects', JSON.stringify(list||[])); }catch{}; setProjects(list||[]); };
-  const ensureArrayProjects = (val:any)=> Array.isArray(val) ? val : (Array.isArray(val?.items) ? val.items : []);
+  // APU: Hormigón H-25 hecho en obra (shim para migraciones antiguas)
+  const buildApuH25Obra = () => ({
+    id: 'apu_h25_obra',
+    descripcion: 'Hormigón H-25 hecho en obra',
+    unidadSalida: 'm3',
+    categoria: 'Obra gruesa',
+    codigoExterno: '',
+    secciones: {
+      materiales: [ { descripcion: 'Materiales (cemento, áridos, aditivo)', unidad: 'm3', cantidad: 1, pu: 109462 } ],
+      manoObra: [ { descripcion: 'Mano de obra', unidad: 'm3', cantidad: 1, pu: 15456 } ],
+      equipos: [ { descripcion: 'Betonera', unidad: 'm3', cantidad: 1, pu: 5000 } ],
+      varios: []
+    }
+  } as any);
 
-  // Lista de proyectos para el stick (catálogo visible)
-  const projectsCatalog = useMemo(()=> Array.isArray(savedProjectsList)? savedProjectsList : [], [savedProjectsList]);
-
-  // Selección de proyecto desde el stick: carga snapshot reciente y sincroniza estado
-  const handleProjectSelect = (pid: string | null, skipUserSwitch?: boolean) => {
-    if(!pid){ setActiveProjectId(null); return; }
-    if(pid==='inline'){ setActiveProjectId('inline'); return; }
-    setActiveProjectId(pid);
-    try{
-      const norm = (s:string)=> (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
-      const stick = (savedProjectsList||[]).find((p:any)=> String(p?.id||'')===String(pid));
-      if(!stick) return;
-      const name = String(stick.name||'');
-      const snaps = ensureArrayProjects(projects).filter((p:any)=> norm(p?.projectName||p?.name||'')===norm(name));
-      const snap = snaps.sort((a:any,b:any)=> (b?.createdAt||0) - (a?.createdAt||0))[0];
-      if(!snap) return;
-      // Recursos
-  if(snap.resourcesSnapshot){ try{ setResources(snap.resourcesSnapshot); }catch{} }
-      // Parámetros financieros
-      if(typeof snap.gg==='number') setGG(snap.gg);
-      if(typeof snap.util==='number') setUtil(snap.util);
-      if(typeof snap.iva==='number') setIva(snap.iva);
-  // Usuario activo
-  if(snap.savedByEmail && !skipUserSwitch){ setActiveUserEmail(String(snap.savedByEmail)); }
-      // Presupuesto/budget
-      const rowsNext = Array.isArray(snap.rows)? snap.rows : [];
-      const chNext = Array.isArray(snap.chapters)? snap.chapters : [];
-      const curId = String(snap.currentChapterId||'');
-      const projName = snap.projectName || stick.name || '';
-      const targetId = snap.budgetId ? String(snap.budgetId) : `b_${Date.now()}`;
-      const bName = projName ? `Presupuesto · ${projName}` : 'Presupuesto';
-      setBudgetsMap((prev:any)=>{
-        const prevMap = prev||{};
-        const exists = !!prevMap[targetId];
-        const base = exists ? prevMap[targetId] : { id: targetId, createdAt: Date.now() };
-        const doc = { ...base, id: targetId, name: bName, rows: rowsNext, chapters: chNext, currentChapterId: curId, updatedAt: Date.now() };
-        return { ...prevMap, [targetId]: doc };
-      });
-      setActiveBudgetId(targetId);
-      // Aplicar estado del snapshot al presupuesto activo
-      setChapters(chNext); saveChapters(chNext);
-      setRows(rowsNext); saveBudget(rowsNext);
-      setCurrentChapterId(curId); saveCurrentChapter(curId);
-      setTab('presupuesto');
-      // Silenciar mensajes al cargar desde stick
-    }catch{ /* noop */ }
-  };
-
-  // Cuando se selecciona un usuario con proyecto asignado, mostrar ese proyecto automáticamente
-  useEffect(()=>{
-    try{
-      const assigned = (activeUser as any)?.assignedProjectId || '';
-      if(!assigned) return;
-      if(String(activeProjectId||'') === String(assigned)) return;
-      const exists = (projectsCatalog||[]).some((p:any)=> String(p?.id||'')===String(assigned));
-      if(!exists) return;
-      handleProjectSelect(String(assigned), true);
-    }catch{}
-   
-  }, [activeUserEmail]);
-  // APU: Hormigón H-25 hecho en obra (1 m³)
-  const buildApuH25Obra = () => {
-    // Mano de obra separada por rol, calculada desde montos mensuales (Indeed Chile),
-    // asumiendo 22 días laborales/mes y rendimiento 3 m³ por jornada.
-    const diasMes = 22;
-    const rendimientoM3PorDia = 3;
-    const maestroMensual = 827_327; // CLP/mes
-    const ayudanteMensual = 480_457; // CLP/mes
-    const costoMaestroPorM3 = Math.round(maestroMensual / diasMes / rendimientoM3PorDia); // ≈ 12.5k
-    const costoAyudantePorM3 = Math.round(ayudanteMensual / diasMes / rendimientoM3PorDia); // ≈ 7.3k
-
-    return {
-      id: 'apu_h25_obra',
-      descripcion: 'Hormigón H-25 hecho en obra',
-      unidadSalida: 'm3',
-      categoria: 'Obra gruesa',
-      codigoExterno: '03-020',
-      secciones: {
-        materiales: [
-          { descripcion: 'Cemento 25 kg (saco)', unidad: 'saco', cantidad: 14, pu: 4790 }, // $67.060
-          { descripcion: 'Arena a granel', unidad: 'm3', cantidad: 0.563, pu: 32900 },     // ≈ $18.523
-          { descripcion: 'Grava 3/4" a granel', unidad: 'm3', cantidad: 0.704, pu: 21900 }, // ≈ $15.418
-          { descripcion: 'Agua', unidad: 'm3', cantidad: 0.141, pu: 0 },
-        ],
-        manoObra: [
-          { descripcion: 'Maestro (rend. 3 m³/jornada)', unidad: 'm3', cantidad: 1, pu: costoMaestroPorM3 },
-          { descripcion: 'Ayudante (rend. 3 m³/jornada)', unidad: 'm3', cantidad: 1, pu: costoAyudantePorM3 },
-        ],
-        equipos: [
-          { descripcion: 'Betonera 90–150 L', unidad: 'm3', cantidad: 1, pu: 3617 },
-          { descripcion: 'Vibrador de inmersión', unidad: 'm3', cantidad: 1, pu: 5000 },
-        ],
-        varios: [],
-      }
-    } as any;
-  };
-
-  // APU: Moldaje Terciado 1 m² (muro doble cara)
+  // APU: Moldaje con terciado estructural 18 mm (m2)
   const buildApuMoldajeTerciado = () => ({
     id: 'apu_moldaje_terciado_m2',
-    descripcion: 'Moldaje Terciado (muro doble cara)',
+    descripcion: 'Moldaje con terciado 18 mm (doble cara)',
     unidadSalida: 'm2',
     categoria: 'Obra gruesa',
     codigoExterno: '',
     secciones: {
       materiales: [
-        { descripcion: 'Terciado 15 mm 1,22×2,44 (12 reusos, 10% merma)', unidad: 'm2', cantidad: 1, pu: 1324 },
-        { descripcion: 'Pino 2×3 prorrateo (3,0 m / 15 reusos)', unidad: 'm2', cantidad: 1, pu: 247 },
-        { descripcion: 'Desmoldante Topex (prorrateo)', unidad: 'm2', cantidad: 1, pu: 142 },
-        { descripcion: 'Clavo 2½" (0,2 kg/m²)', unidad: 'm2', cantidad: 1, pu: 362 },
-        { descripcion: 'Amarras (4 u/m²)', unidad: 'm2', cantidad: 1, pu: 9107 },
+        { descripcion: 'Encofrado terciado 18 mm amort. (5 usos)', unidad: 'm2', cantidad: 1, pu: 2956 },
+        { descripcion: 'Listones/amarres/clavos', unidad: 'm2', cantidad: 1, pu: 2439 },
+        { descripcion: 'Desmoldante', unidad: 'm2', cantidad: 1, pu: 280 },
       ],
-      manoObra: [
-        { descripcion: 'Carpintero (12 m²/día, 9 h/día)', unidad: 'm2', cantidad: 1, pu: 5265 },
-        { descripcion: 'Ayudante (12 m²/día, 9 h/día)', unidad: 'm2', cantidad: 1, pu: 5264 },
+      manoObra: [ { descripcion: 'Mano de obra', unidad: 'm2', cantidad: 1, pu: 4802 } ],
+      equipos: [],
+      varios: []
+    }
+  } as any);
+
+  // APU: Hormigón H-20 hecho en obra + vibrado (m3)
+  const buildApuH20ObraVibradoM3 = () => ({
+    id: 'apu_h20_obra_vibrado_m3',
+    descripcion: 'Hormigón H-20 hecho en obra + vibrado',
+    unidadSalida: 'm3',
+    categoria: 'Obra gruesa',
+    codigoExterno: '',
+    secciones: {
+      materiales: [ { descripcion: 'Materiales (c/5% mermas)', unidad: 'm3', cantidad: 1, pu: 101000 } ],
+      manoObra: [ { descripcion: 'Mano de obra', unidad: 'm3', cantidad: 1, pu: 15000 } ],
+      equipos: [ { descripcion: 'Betonera + vibrador', unidad: 'm3', cantidad: 1, pu: 6000 } ],
+      varios: []
+    }
+  } as any);
+
+  // APU: Material — Ladrillo fiscal por unidad
+  const buildApuMaterialLadrilloFiscalU = () => ({
+    id: 'apu_material_ladrillo_fiscal_u',
+    descripcion: 'Ladrillo fiscal 29×14×8 (unidad)',
+    unidadSalida: 'u',
+    categoria: 'Materiales',
+    codigoExterno: '',
+    secciones: {
+      materiales: [ { descripcion: 'Ladrillo fiscal', unidad: 'u', cantidad: 1, pu: 390 } ],
+      manoObra: [],
+      equipos: [],
+      varios: []
+    }
+  } as any);
+
+  // APU: Cubierta teja de fibrocemento (m2)
+  const buildApuCubiertaTejaFibrocementoM2 = () => ({
+    id: 'apu_cubierta_teja_fibrocemento_m2',
+    descripcion: 'Cubierta teja de fibrocemento sobre OSB + fieltro',
+    unidadSalida: 'm2',
+    categoria: 'Techumbre',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Revestimiento teja fibrocemento', unidad: 'm2', cantidad: 1, pu: 9800 },
+        { descripcion: 'Fieltro asfáltico', unidad: 'm2', cantidad: 1, pu: 1200 },
+        { descripcion: 'Tablero OSB 11 mm (prorrateo)', unidad: 'm2', cantidad: 1, pu: 3500 },
+        { descripcion: 'Clavos/fijaciones', unidad: 'm2', cantidad: 1, pu: 600 }
       ],
-      equipos: [
-        { descripcion: 'Puntales y prensas (prorrateo simple)', unidad: 'm2', cantidad: 1, pu: 1000 },
+      manoObra: [ { descripcion: 'Instalación cubierta', unidad: 'm2', cantidad: 1, pu: 3500 } ],
+      equipos: [],
+      varios: []
+    }
+  } as any);
+
+  // APU: Ventana PVC 100×100 instalada (unidad)
+  const buildApuVentanaPVC100x100 = () => ({
+    id: 'apu_ventana_pvc_100x100_instalada',
+    descripcion: 'Ventana PVC 100×100 mm instalada',
+    unidadSalida: 'u',
+    categoria: 'Aberturas',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Ventana PVC 100×100 termopanel', unidad: 'u', cantidad: 1, pu: 150000 },
+        { descripcion: 'Sellos y fijaciones', unidad: 'u', cantidad: 1, pu: 5000 }
       ],
+      manoObra: [ { descripcion: 'Instalación ventana', unidad: 'u', cantidad: 1, pu: 18000 } ],
+      equipos: [],
+      varios: []
+    }
+  } as any);
+
+  // APU: Kit baño económico (set)
+  const buildApuKitBanoEconomico = () => ({
+    id: 'apu_kit_bano_economico_set',
+    descripcion: 'Kit baño económico (WC + lavamanos + grifería)',
+    unidadSalida: 'set',
+    categoria: 'Sanitarios',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'WC completo', unidad: 'set', cantidad: 1, pu: 85000 },
+        { descripcion: 'Lavamanos + pedestal', unidad: 'set', cantidad: 1, pu: 60000 },
+        { descripcion: 'Grifería básica', unidad: 'set', cantidad: 1, pu: 35000 }
+      ],
+      manoObra: [ { descripcion: 'Instalación artefactos', unidad: 'set', cantidad: 1, pu: 45000 } ],
+      equipos: [],
+      varios: []
+    }
+  } as any);
+
+  // APU: Kit cocina económico (set)
+  const buildApuKitCocinaEconomico = () => ({
+    id: 'apu_kit_cocina_economico_set',
+    descripcion: 'Kit cocina económico (lavaplatos + grifería + accesorios)',
+    unidadSalida: 'set',
+    categoria: 'Sanitarios',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Lavaplatos simple', unidad: 'set', cantidad: 1, pu: 45000 },
+        { descripcion: 'Grifería cocina', unidad: 'set', cantidad: 1, pu: 30000 },
+        { descripcion: 'Accesorios e insumos', unidad: 'set', cantidad: 1, pu: 15000 }
+      ],
+      manoObra: [ { descripcion: 'Instalación kit cocina', unidad: 'set', cantidad: 1, pu: 35000 } ],
+      equipos: [],
+      varios: []
+    }
+  } as any);
+
+  // ===== APUs para Calculadora (si faltan, crearlos) =====
+  // Fundaciones y Estructura (por m²)
+  const buildApuFundacionesEstructuraM2 = () => ({
+    id: 'apu_fundaciones_estructura_m2',
+    descripcion: 'Fundaciones y estructura (hormigón + acero + encofrado)',
+    unidadSalida: 'm2',
+    categoria: 'Obra gruesa',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Hormigón H-20 (prorrateo)', unidad: 'm2', cantidad: 1, pu: 32000 },
+        { descripcion: 'Acero de refuerzo (prorrateo)', unidad: 'm2', cantidad: 1, pu: 18000 },
+        { descripcion: 'Madera encofrado + misceláneos', unidad: 'm2', cantidad: 1, pu: 8000 },
+      ],
+      manoObra: [ { descripcion: 'Cuadrilla hormigonado', unidad: 'm2', cantidad: 1, pu: 5150 } ],
+      equipos: [],
       varios: [],
     }
   } as any);
+
+  // Albañilería (por m²)
+  const buildApuAlbanileriaM2 = () => ({
+    id: 'apu_albanileria_muro_m2',
+    descripcion: 'Albañilería de muros (ladrillo fiscal + mortero)',
+    unidadSalida: 'm2',
+    categoria: 'Obra gruesa',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Ladrillo fiscal + mortero (prorr.)', unidad: 'm2', cantidad: 1, pu: 9000 },
+      ],
+      manoObra: [ { descripcion: 'Colocación ladrillo', unidad: 'm2', cantidad: 1, pu: 6783 } ],
+      equipos: [],
+      varios: [ { descripcion: 'Misceláneos y herramientas', unidad: 'm2', cantidad: 1, pu: 0 } ],
+    }
+  } as any);
+
+  // Techumbre con teja fibrocemento (por m²)
+  const buildApuTechumbreTejaFibroM2 = () => ({
+    id: 'apu_techumbre_teja_fibro_m2',
+    descripcion: 'Techumbre madera + fieltro + OSB + teja fibrocemento',
+    unidadSalida: 'm2',
+    categoria: 'Techumbre',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Estructura cerchas y listones (prorr.)', unidad: 'm2', cantidad: 1, pu: 15000 },
+        { descripcion: 'Fieltro asfáltico', unidad: 'm2', cantidad: 1, pu: 1200 },
+        { descripcion: 'OSB 11 mm (prorr.)', unidad: 'm2', cantidad: 1, pu: 3500 },
+        { descripcion: 'Teja de fibrocemento + fijaciones', unidad: 'm2', cantidad: 1, pu: 12500 },
+      ],
+      manoObra: [ { descripcion: 'Instalación techumbre', unidad: 'm2', cantidad: 1, pu: 885 } ],
+      equipos: [],
+      varios: [ { descripcion: 'Misceláneos', unidad: 'm2', cantidad: 1, pu: 1980 } ],
+    }
+  } as any);
+
+  // Terminaciones interiores (por m²)
+  const buildApuTerminacionesInterioresM2 = () => ({
+    id: 'apu_terminaciones_interiores_m2',
+    descripcion: 'Terminaciones interiores base (pinturas, pisos, cielos)',
+    unidadSalida: 'm2',
+    categoria: 'Terminaciones',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Pinturas + insumos (prorr.)', unidad: 'm2', cantidad: 1, pu: 6000 },
+        { descripcion: 'Pisos y adhesivos (prorr.)', unidad: 'm2', cantidad: 1, pu: 12000 },
+        { descripcion: 'Cielos y perfilería (prorr.)', unidad: 'm2', cantidad: 1, pu: 3600 },
+      ],
+      manoObra: [ { descripcion: 'Instalación/terminaciones', unidad: 'm2', cantidad: 1, pu: 2386 } ],
+      equipos: [],
+      varios: [ { descripcion: 'Misceláneos', unidad: 'm2', cantidad: 1, pu: 0 } ],
+    }
+  } as any);
+
+  // Carpintería y Ventanas (lote)
+  const buildApuCarpinteriaVentanasLote = () => ({
+    id: 'apu_carpinteria_ventanas_lote',
+    descripcion: 'Carpintería y ventanas (puertas, ventanas, herrajes)',
+    unidadSalida: 'lote',
+    categoria: 'Carpintería',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Puerta principal madera maciza', unidad: 'u', cantidad: 1, pu: 149990 },
+        { descripcion: 'Puertas interiores honeycomb', unidad: 'u', cantidad: 3, pu: 44990 },
+        { descripcion: 'Ventanas PVC línea económica', unidad: 'u', cantidad: 6, pu: 80000 },
+        { descripcion: 'Herrajes y accesorios', unidad: 'lote', cantidad: 1, pu: 150000 },
+      ],
+      manoObra: [],
+      equipos: [],
+      varios: [ { descripcion: 'Ajustes y sellos', unidad: 'lote', cantidad: 1, pu: 60000 } ],
+    }
+  } as any);
+
+  // Instalaciones Sanitarias y Gas (lote)
+  const buildApuInstSanitGasLote = () => ({
+    id: 'apu_inst_sanit_gas_lote',
+    descripcion: 'Instalaciones sanitarias y gas (tuberías + kits)',
+    unidadSalida: 'lote',
+    categoria: 'Instalaciones sanitarias',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'PVC desagüe (lote)', unidad: 'lote', cantidad: 1, pu: 180000 },
+        { descripcion: 'PPR agua caliente/fría (lote)', unidad: 'lote', cantidad: 1, pu: 220000 },
+        { descripcion: 'Kit baño económico', unidad: 'set', cantidad: 1, pu: 299990 },
+        { descripcion: 'Kit cocina económico', unidad: 'set', cantidad: 1, pu: 149990 },
+        { descripcion: 'Cañería gas y regulador', unidad: 'lote', cantidad: 1, pu: 120000 },
+      ],
+      manoObra: [],
+      equipos: [],
+      varios: [ { descripcion: 'Misceláneos', unidad: 'lote', cantidad: 1, pu: 0 } ],
+    }
+  } as any);
+
+  // Instalaciones Eléctricas (lote)
+  const buildApuInstElectricasLote = () => ({
+    id: 'apu_inst_electricas_lote',
+    descripcion: 'Instalaciones eléctricas (cableado, tablero, puntos)',
+    unidadSalida: 'lote',
+    categoria: 'Instalaciones eléctricas',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Cableado (THWN/LSZH)', unidad: 'lote', cantidad: 1, pu: 250000 },
+        { descripcion: 'Tablero y protecciones', unidad: 'u', cantidad: 1, pu: 80000 },
+        { descripcion: 'Cajas/tomas/interruptores', unidad: 'u', cantidad: 20, pu: 2990 },
+        { descripcion: 'Tubos y canaletas', unidad: 'lote', cantidad: 1, pu: 70000 },
+      ],
+      manoObra: [],
+      equipos: [],
+      varios: [ { descripcion: 'Misceláneos', unidad: 'lote', cantidad: 1, pu: 0 } ],
+    }
+  } as any);
+
+    // ===== APUs específicos para "lotes" (placeholders editables) =====
+    const buildApuMovimientoTierraLote = () => ({
+      id: 'apu_mov_tierra_lote',
+      descripcion: 'Movimiento de tierra (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Movimiento de tierras',
+      codigoExterno: '',
+      secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Lote estimado movimiento/ajustes', unidad: 'lote', cantidad: 1, pu: 150000 } ] }
+    } as any);
+    const buildApuClavosAlambreLote = () => ({
+      id: 'apu_clavos_alambre_lote',
+      descripcion: 'Clavos y alambre (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Materiales',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Clavos + alambre (paquete)', unidad: 'lote', cantidad: 1, pu: 45000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuMorteroPegaLote = () => ({
+      id: 'apu_mortero_pega_lote',
+      descripcion: 'Mortero de pega (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Materiales',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Sacos mortero de pega', unidad: 'lote', cantidad: 1, pu: 120000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuFijacionesTechoLote = () => ({
+      id: 'apu_fijaciones_techo_lote',
+      descripcion: 'Clavos y fijaciones para techumbre (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Techumbre',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Fijaciones techo (tornillos, clavos, sellos)', unidad: 'lote', cantidad: 1, pu: 80000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuHerrajesCarpinteriaLote = () => ({
+      id: 'apu_herrajes_carpinteria_lote',
+      descripcion: 'Herrajes de carpintería (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Carpintería',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Herrajes (bisagras, chapas, tiradores)', unidad: 'lote', cantidad: 1, pu: 150000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuHerrajesBPCLote = () => ({
+      id: 'apu_herrajes_bisagras_picaportes_cerraduras_lote',
+      descripcion: 'Herrajes (bisagras, picaportes, cerraduras) — lote (1 ext + 3 int)',
+      unidadSalida: 'lote',
+      categoria: 'Carpintería',
+      codigoExterno: '',
+      secciones: {
+        materiales: [
+          { descripcion: 'Bisagras reforzadas', unidad: 'u', cantidad: 12, pu: 2990 },
+          { descripcion: 'Picaportes interiores', unidad: 'u', cantidad: 3, pu: 9990 },
+          { descripcion: 'Cerradura exterior', unidad: 'u', cantidad: 1, pu: 24990 },
+          { descripcion: 'Cilindros/contrachapas y topes (lote)', unidad: 'lote', cantidad: 1, pu: 19990 },
+          { descripcion: 'Tornillería y placas (lote)', unidad: 'lote', cantidad: 1, pu: 9990 },
+        ],
+        manoObra: [],
+        equipos: [],
+        varios: [ { descripcion: 'Ajustes y misceláneos', unidad: 'lote', cantidad: 1, pu: 15000 } ],
+      }
+    } as any);
+    const buildApuTuberiasPVCDesagueLote = () => ({
+      id: 'apu_tuberias_pvc_desague_lote',
+      descripcion: 'Tuberías PVC desagüe (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Sanitarios',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Tuberías y fittings PVC sanitaria', unidad: 'lote', cantidad: 1, pu: 180000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuTuberiasPPRAguaLote = () => ({
+      id: 'apu_tuberias_ppr_agua_lote',
+      descripcion: 'Tuberías PPR agua (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Sanitarios',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Tuberías y fittings PPR', unidad: 'lote', cantidad: 1, pu: 220000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuCaneriaGasLote = () => ({
+      id: 'apu_caneria_gas_lote',
+      descripcion: 'Cañería de gas (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Gas',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Tuberías, fittings y kit gas', unidad: 'lote', cantidad: 1, pu: 120000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuCablesElectricosLote = () => ({
+      id: 'apu_cables_electricos_lote',
+      descripcion: 'Cables eléctricos (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Eléctrica',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Rollos de cable THHN/LSZH', unidad: 'lote', cantidad: 1, pu: 250000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuTubosCanaletasLote = () => ({
+      id: 'apu_tubos_canaletas_lote',
+      descripcion: 'Tubos/canaletas (lote)',
+      unidadSalida: 'lote',
+      categoria: 'Eléctrica',
+      codigoExterno: '',
+      secciones: { materiales: [ { descripcion: 'Tubería PVC conduit y canaletas', unidad: 'lote', cantidad: 1, pu: 70000 } ], manoObra: [], equipos: [], varios: [] }
+    } as any);
+    const buildApuMO30SobreMaterialesNota = () => ({
+      id: 'apu_mo_30_materiales_nota',
+      descripcion: 'Mano de obra 30% del valor materiales (nota)',
+      unidadSalida: 'lote',
+      categoria: 'Notas',
+      codigoExterno: '',
+      secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Ajustar manualmente 30% de materiales', unidad: 'lote', cantidad: 1, pu: 0 } ] }
+    } as any);
+    const buildApuGGImprev10Nota = () => ({
+      id: 'apu_gg_imprev_10_nota',
+      descripcion: 'Gastos generales e imprevistos 10% (nota)',
+      unidadSalida: 'lote',
+      categoria: 'Notas',
+      codigoExterno: '',
+      secciones: { materiales: [], manoObra: [], equipos: [], varios: [ { descripcion: 'Se aplica con parámetros financieros', unidad: 'lote', cantidad: 1, pu: 0 } ] }
+    } as any);
 
   // Seed inicial de biblioteca si está vacía
   useEffect(()=>{
@@ -239,6 +764,14 @@ const App: React.FC = () => {
         const seed:any[] = [];
         try{ seed.push(buildApuH25Obra()); }catch{}
         try{ seed.push(buildApuMoldajeTerciado()); }catch{}
+        try{ seed.push(buildApuMovimientoTierrasExcavacionLote()); }catch{}
+        try{ seed.push(buildApuFundacionesEstructuraM2()); }catch{}
+        try{ seed.push(buildApuAlbanileriaM2()); }catch{}
+        try{ seed.push(buildApuTechumbreTejaFibroM2()); }catch{}
+        try{ seed.push(buildApuTerminacionesInterioresM2()); }catch{}
+        try{ seed.push(buildApuCarpinteriaVentanasLote()); }catch{}
+        try{ seed.push(buildApuInstSanitGasLote()); }catch{}
+        try{ seed.push(buildApuInstElectricasLote()); }catch{}
         // Sanitarios básicos
         try{ seed.push(buildApuDrenInfiltracion_m()); }catch{}
         try{ seed.push(buildApuTuberiaPVC110_m()); }catch{}
@@ -249,26 +782,85 @@ const App: React.FC = () => {
         if(seed.length>0){ saveLibrary(seed); }
       }
     }catch{}
-   
-  }, []);
+    
+  }, [allApus, saveLibrary]);
 
   // Migración: asegurar APUs sanitarios en biblioteca aunque ya existan otros
   useEffect(()=>{
     try{
       const ensure: Array<{id:string; build: ()=>any}> = [
+        { id: 'apu_mov_tierras_excavacion_lote', build: buildApuMovimientoTierrasExcavacionLote },
+        { id: 'apu_fundaciones_estructura_m2', build: buildApuFundacionesEstructuraM2 },
+        { id: 'apu_albanileria_muro_m2', build: buildApuAlbanileriaM2 },
+        { id: 'apu_techumbre_teja_fibro_m2', build: buildApuTechumbreTejaFibroM2 },
+        { id: 'apu_terminaciones_interiores_m2', build: buildApuTerminacionesInterioresM2 },
+        { id: 'apu_carpinteria_ventanas_lote', build: buildApuCarpinteriaVentanasLote },
+        { id: 'apu_inst_sanit_gas_lote', build: buildApuInstSanitGasLote },
+        { id: 'apu_inst_electricas_lote', build: buildApuInstElectricasLote },
         { id: 'apu_dren_infiltracion_m', build: buildApuDrenInfiltracion_m },
         { id: 'apu_tuberia_pvc_110_m', build: buildApuTuberiaPVC110_m },
         { id: 'apu_fosa_septica_3000l_u', build: buildApuFosa3000L_u },
         { id: 'apu_camara_inspeccion_elevador_u', build: buildApuCamaraInspeccion_u },
         { id: 'apu_camara_desgrasadora_100l_u', build: buildApuCamaraDesgrasadora_u },
         { id: 'apu_camara_distribuidora_100l_u', build: buildApuCamaraDistribuidora_u },
+        // Adicionales requeridos por Calculadora
+        { id: 'apu_clavos_alambre_lote', build: buildApuClavosAlambreLote },
+        { id: 'apu_mortero_pega_lote', build: buildApuMorteroPegaLote },
+        { id: 'apu_fijaciones_techo_lote', build: buildApuFijacionesTechoLote },
+        { id: 'apu_material_ladrillo_fiscal_u', build: buildApuMaterialLadrilloFiscalU },
+        { id: 'apu_acond_termico_cielo_lana100', build: buildApuAcondTermCielo },
+        { id: 'apu_acond_termico_muros_lana100_bv', build: buildApuAcondTermMuros },
+        { id: 'apu_ventana_pvc_100x100_instalada', build: buildApuVentanaPVC100x100 },
+        { id: 'apu_puerta_exterior_acero_90x200_instalada', build: buildApuPuertaExteriorAcero },
+        { id: 'apu_puerta_exterior_madera_90x200_instalada', build: buildApuPuertaExteriorMadera },
+        { id: 'apu_herrajes_bisagras_picaportes_cerraduras_lote', build: buildApuHerrajesBPCLote },
+        { id: 'apu_kit_bano_economico_set', build: buildApuKitBanoEconomico },
+        { id: 'apu_kit_cocina_economico_set', build: buildApuKitCocinaEconomico },
       ];
       const present = new Set((allApus||[]).map((a:any)=> String(a?.id||'')));
       const missing = ensure.filter(e => !present.has(e.id)).map(e=> e.build());
       if(missing.length>0){ saveLibrary([...(allApus||[]), ...missing]); }
     }catch{}
-   
-  }, []);
+    
+  }, [allApus, saveLibrary]);
+
+  // Migración: completar valores estimados en APUs de lote que estaban con pu=0
+  useEffect(() => {
+    try {
+      const patchBuilders: Record<string, () => any> = {
+        'apu_mov_tierra_lote': buildApuMovimientoTierraLote,
+        'apu_clavos_alambre_lote': buildApuClavosAlambreLote,
+        'apu_mortero_pega_lote': buildApuMorteroPegaLote,
+        'apu_fijaciones_techo_lote': buildApuFijacionesTechoLote,
+        'apu_herrajes_carpinteria_lote': buildApuHerrajesCarpinteriaLote,
+        'apu_tuberias_pvc_desague_lote': buildApuTuberiasPVCDesagueLote,
+        'apu_tuberias_ppr_agua_lote': buildApuTuberiasPPRAguaLote,
+        'apu_caneria_gas_lote': buildApuCaneriaGasLote,
+        'apu_cables_electricos_lote': buildApuCablesElectricosLote,
+        'apu_tubos_canaletas_lote': buildApuTubosCanaletasLote,
+      };
+
+      const acc = (arr: any) => (Array.isArray(arr) ? arr : []) as Array<{ pu?: number }>;
+      let changed = false;
+      const next = (allApus || []).map((apu: any) => {
+        const build = patchBuilders[apu?.id as string];
+        if (!build) return apu;
+        const s = apu?.secciones || {};
+        const rows = [...acc(s.materiales), ...acc(s.manoObra), ...acc(s.equipos), ...acc(s.varios)];
+        const hasAnyValue = rows.some((r) => Number(r?.pu || 0) > 0);
+        // Solo parchear si no hay ningún valor > 0 (placeholder)
+        if (!hasAnyValue) {
+          const base = build();
+          changed = true;
+          return { ...apu, secciones: JSON.parse(JSON.stringify(base.secciones || {})) };
+        }
+        return apu;
+      });
+      if (changed) saveLibrary(next);
+    } catch {
+      /* noop */
+    }
+  }, [allApus, saveLibrary]);
 
   // APU: Muro de ladrillo 1 m² (ladrillo fiscal 29×14×8)
   const buildApuMuroLadrillo = () => {
@@ -353,8 +945,8 @@ const App: React.FC = () => {
     const mat_tubo = Math.round(2331.7);
     const mat_geo = 1560;
     const mat_grav = 4275;
-    const mat_sub = mat_tubo + mat_geo + mat_grav; // ≈ 8167
-    const miscel = Math.round(mat_sub * 0.03); // ≈ 245
+  const _mat_sub = mat_tubo + mat_geo + mat_grav; // ≈ 8167
+    const miscel = Math.round(_mat_sub * 0.03); // ≈ 245
     const mo = Math.round(2421.9); // 2.421,9 ⇒ 2422
     const eq = 1200; // 0,06 h/m × 20.000
     return {
@@ -388,8 +980,8 @@ const App: React.FC = () => {
     const fittings = 600;
     const adhesivo = 100;
     const arena = 945;
-    const mat_sub = pvc + fittings + adhesivo + arena; // ≈ 3977
-    const miscel = Math.round(mat_sub * 0.03); // ≈ 119
+  const _mat_sub = pvc + fittings + adhesivo + arena; // ≈ 3977
+    const miscel = Math.round(_mat_sub * 0.03); // ≈ 119
     const mo = Math.round(2421.9);
     const eq = 600; // 0,03 h/m × 20.000
     return {
@@ -423,7 +1015,7 @@ const App: React.FC = () => {
     const fosa = 489990;
     const arena = 63000;
     const sellos = 18990;
-    const mat_sub = fosa + arena + sellos; // 571.980
+  const _mat_sub = fosa + arena + sellos; // 571.980
     const miscel = 17159;
     const mo = 77500; // 0,5 j × 155.000
     const eq = 40000; // 2 h × 20.000
@@ -451,7 +1043,7 @@ const App: React.FC = () => {
     const camara = 70990;
     const elevador = 39990;
     const adhesivos = 1000;
-    const mat_sub = camara + elevador + adhesivos; // 111.980
+  const _mat_sub = camara + elevador + adhesivos; // 111.980
     const miscel = 3359;
     const mo = 38750; // 0,25 j
     const eq = 5000; // 0,25 h
@@ -477,7 +1069,7 @@ const App: React.FC = () => {
   const buildApuCamaraDesgrasadora_u = () => {
     const equipo = 46390;
     const adhesivos = 500;
-    const mat_sub = equipo + adhesivos; // 46.890
+  const _mat_sub = equipo + adhesivos; // 46.890
     const miscel = 1407;
     const mo = 38750;
     const eq = 5000;
@@ -502,7 +1094,7 @@ const App: React.FC = () => {
   const buildApuCamaraDistribuidora_u = () => {
     const equipo = 41290;
     const adhesivos = 500;
-    const mat_sub = equipo + adhesivos; // 41.790
+  const _mat_sub = equipo + adhesivos; // 41.790
     const miscel = 1254;
     const mo = 38750;
     const eq = 5000;
@@ -1070,6 +1662,100 @@ const App: React.FC = () => {
       ],
       equipos: [],
       varios: [ { descripcion: 'Espumas/sellos y herramientas', unidad: 'u', cantidad: 1, pu: 2000 } ],
+    }
+  } as any);
+
+  const buildApuPuertaExteriorMadera = () => ({
+    id: 'apu_puerta_exterior_madera_90x200_instalada',
+    descripcion: 'Puerta exterior madera maciza 90×200 instalada',
+    unidadSalida: 'u',
+    categoria: 'Aberturas',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Hoja de puerta madera maciza 90×200', unidad: 'u', cantidad: 1, pu: 249990 },
+        { descripcion: 'Marco de madera para puerta 90×200', unidad: 'u', cantidad: 1, pu: 39990 },
+        { descripcion: 'Cerradura exterior (seguridad)', unidad: 'u', cantidad: 1, pu: 24990 },
+        { descripcion: 'Bisagras reforzadas', unidad: 'u', cantidad: 3, pu: 2990 },
+        { descripcion: 'Sellos y espuma PU', unidad: 'u', cantidad: 1, pu: 2500 },
+      ],
+      manoObra: [
+        { descripcion: 'Maestro (0,40 jornal/u)', unidad: 'u', cantidad: 1, pu: 18000 },
+        { descripcion: 'Ayudante (0,40 jornal/u)', unidad: 'u', cantidad: 1, pu: 18000 },
+      ],
+      equipos: [],
+      varios: [ { descripcion: 'Herramientas y ajustes', unidad: 'u', cantidad: 1, pu: 3000 } ],
+    }
+  } as any);
+
+  // ===== Nuevos APU solicitados =====
+  const buildApuMorteroEstucoCementicioM2 = () => ({
+    id: 'apu_mortero_estuco_cementicio_m2',
+    descripcion: 'Mortero (Arena–Cemento) estuco 2 cm',
+    unidadSalida: 'm2',
+    categoria: 'Terminaciones',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Cemento 25 kg (0,28 saco/m²)', unidad: 'saco', cantidad: 0.28, pu: 4790 },
+        { descripcion: 'Arena gruesa 25 kg (1,02 saco/m²)', unidad: 'saco', cantidad: 1.02, pu: 940 },
+        { descripcion: 'Agua y misceláneos', unidad: 'm2', cantidad: 1, pu: 150 },
+        { descripcion: 'Merma materiales 3%', unidad: 'm2', cantidad: 1, pu: 74 },
+      ],
+      manoObra: [
+        { descripcion: 'Maestro (1/18 jornal/m²)', unidad: 'jornal', cantidad: 1/18, pu: 60000 },
+        { descripcion: 'Ayudante (1/18 jornal/m²)', unidad: 'jornal', cantidad: 1/18, pu: 45000 },
+      ],
+      equipos: [ { descripcion: 'Herramienta menor', unidad: 'm2', cantidad: 1, pu: 300 } ],
+      varios: []
+    }
+  } as any);
+
+  const buildApuCerchasPinoTechoM2 = () => ({
+    id: 'apu_cerchas_pino_techo_m2',
+    descripcion: 'Cerchas de pino para techo (2 aguas)',
+    unidadSalida: 'm2',
+    categoria: 'Techumbre',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Madera pino 2×4 (9,0 m/ml por m²)', unidad: 'm', cantidad: 9.0, pu: 1621.9 },
+        { descripcion: 'Pernos coche 3/8″×6″ (2 u/m²)', unidad: 'u', cantidad: 2, pu: 1929 },
+        { descripcion: 'Tirafondos 1/4″×4″ (20 u/m²)', unidad: 'u', cantidad: 20, pu: 95.9 },
+        { descripcion: 'Merma materiales 3%', unidad: 'm2', cantidad: 1, pu: 611 },
+      ],
+      manoObra: [
+        { descripcion: 'Carpintero (1/20 jornal/m²)', unidad: 'jornal', cantidad: 1/20, pu: 60000 },
+        { descripcion: 'Carpintero (1/20 jornal/m²)', unidad: 'jornal', cantidad: 1/20, pu: 60000 },
+        { descripcion: 'Ayudante (1/20 jornal/m²)', unidad: 'jornal', cantidad: 1/20, pu: 45000 },
+      ],
+      equipos: [ { descripcion: 'Herramienta menor', unidad: 'm2', cantidad: 1, pu: 500 } ],
+      varios: []
+    }
+  } as any);
+
+  const buildApuPuertaPrincipalMaderaMacizaU = () => ({
+    id: 'apu_puerta_madera_maciza_90x200_u',
+    descripcion: 'Puerta principal madera maciza 90×200 instalada',
+    unidadSalida: 'u',
+    categoria: 'Terminaciones',
+    codigoExterno: '',
+    secciones: {
+      materiales: [
+        { descripcion: 'Puerta exterior pino oregón 90×200', unidad: 'u', cantidad: 1, pu: 482990 },
+        { descripcion: 'Marco pino finger 40×90 mm (juego 5,4 m)', unidad: 'u', cantidad: 1, pu: 15590 },
+        { descripcion: 'Bisagras 4″×4″ (pack 3)', unidad: 'u', cantidad: 1, pu: 8490 },
+        { descripcion: 'Cerradura de acceso (ODIS embutir o similar)', unidad: 'u', cantidad: 1, pu: 44990 },
+        { descripcion: 'Tornillos 1½″ (caja 100 u — uso 50 u)', unidad: 'caja', cantidad: 0.5, pu: 4790 },
+        { descripcion: 'Barniz marino exterior, 1 gal (uso ¼ gal, 2 manos)', unidad: 'gal', cantidad: 0.25, pu: 18990 },
+        { descripcion: 'Merma materiales 2%', unidad: 'u', cantidad: 1, pu: 11184 },
+      ],
+      manoObra: [
+        { descripcion: 'Carpintero (½ jornal/u)', unidad: 'jornal', cantidad: 0.5, pu: 60000 },
+        { descripcion: 'Ayudante (½ jornal/u)', unidad: 'jornal', cantidad: 0.5, pu: 45000 },
+      ],
+      equipos: [ { descripcion: 'Herramienta menor', unidad: 'u', cantidad: 1, pu: 1000 } ],
+      varios: []
     }
   } as any);
 
@@ -2141,8 +2827,11 @@ const App: React.FC = () => {
     }
   } as any);
 
-  // Siembra automática del APU H-25 en biblioteca si no existe
+  // Siembra/migraciones biblioteca: H-25 y ordenes (protegido para ejecutar 1 sola vez)
+  const h25MigrationRan = React.useRef(false);
   useEffect(() => {
+    if (h25MigrationRan.current) return; // evita re-ejecuciones por cambios en deps
+    h25MigrationRan.current = true;
     // Migración: dividir mano de obra única en Maestro/Ayudante preservando el total
     try {
       const raw = localStorage.getItem('apu-library');
@@ -2272,6 +2961,10 @@ const App: React.FC = () => {
     const readLib2 = () => { try{ return JSON.parse(localStorage.getItem('apu-library')||'[]'); }catch{ return customApus; } };
     let lib2 = readLib2();
     const builders: Array<[string, ()=>any]> = [
+      // Solicitados en esta iteración
+      ['apu_mortero_estuco_cementicio_m2', buildApuMorteroEstucoCementicioM2],
+      ['apu_cerchas_pino_techo_m2', buildApuCerchasPinoTechoM2],
+      ['apu_puerta_madera_maciza_90x200_u', buildApuPuertaPrincipalMaderaMacizaU],
       ['apu_exc_zanja_manual', buildApuExcavacionZanjaManual],
       ['apu_relleno_compact_manual', buildApuRellenoCompactManual],
       ['apu_hormigon_zapata_corrida_ml', buildApuZapataCorridaEnZanja],
@@ -2393,6 +3086,9 @@ const App: React.FC = () => {
       apuId,
       moldId,
       ladrId,
+      'apu_mortero_estuco_cementicio_m2',
+      'apu_cerchas_pino_techo_m2',
+      'apu_puerta_madera_maciza_90x200_u',
       // Nuevos solicitados (prioridad al principio de MT/OG)
       'apu_excavacion_retiro_m3',
       'apu_base_estabilizada_10cm_m2',
@@ -2485,10 +3181,10 @@ const App: React.FC = () => {
     const rest = (lib2||[]).filter((a:any)=> !used.has(a.id));
     saveLibrary([ ...ordered, ...rest ]);
      
-  }, []);
+  }, [allApus, customApus, saveLibrary]);
 
   // Biblioteca UI state
-  const [libScope, setLibScope] = useState<'all'|'mine'>('all');
+  const [libScope] = useState<'all'|'mine'>('all');
   const [libSearch, setLibSearch] = useState('');
   const [libCategory, setLibCategory] = useState<string>('all');
   const [showCreateApu, setShowCreateApu] = useState(false);
@@ -2537,6 +3233,19 @@ const App: React.FC = () => {
   };
   const updateFormMeta = (patch:any)=>{
     setExpandedForm((f:any)=> ({ ...f, secciones: { ...(f.secciones||{}), __meta: { ...((f.secciones||{}).__meta||{}), ...patch } } }));
+  };
+  // Agregar una fila rápida a la primera sección disponible (o a Materiales por defecto)
+  const addFormAnyRow = ()=>{
+    setExpandedForm((f:any)=>{
+      const sec = { ...(f?.secciones||{}) } as any;
+      const order = ['materiales','manoObra','equipos','varios'];
+      let target: string | null = null;
+      for(const k of order){ if(Array.isArray(sec[k])){ target = k; break; } }
+      if(!target){ target = 'materiales'; sec[target] = []; }
+      const rows = Array.isArray(sec[target]) ? [...sec[target]] : [];
+      rows.push({ descripcion:'', unidad:'', cantidad:0, pu:0 });
+      return { ...f, secciones: { ...sec, [target]: rows } };
+    });
   };
   // Secciones extra (inline biblioteca)
   const addFormExtraSection = ()=>{
@@ -2622,9 +3331,9 @@ const App: React.FC = () => {
       setTimeout(()=> setApuDetail({ open:true, id: withId.id }), 0);
     }
   };
-  const handleOpenEditApu = (id:string)=>{
+  const handleOpenEditApu = React.useCallback((id:string)=>{
     const a = customApus.find(x=>x.id===id); if(!a) return; setApuEditing(a); setShowEditApu(true);
-  };
+  }, [customApus]);
   const handleSaveEditApu = (apu:any)=>{
     if(!apuEditing) return;
     // Actualizar APU existente (solo personalizados)
@@ -2642,7 +3351,7 @@ const App: React.FC = () => {
     };
     window.addEventListener('apu-edit-request', onEditReq as any);
     return ()=> window.removeEventListener('apu-edit-request', onEditReq as any);
-  }, [customApus]);
+  }, [customApus, handleOpenEditApu]);
   // Detecta si un APU está referenciado por alguna partida o subpartida del presupuesto activo
   const findApuUsages = (apuId: string) => {
     const refs: Array<{ rowId: string; subId?: string; label: string }> = [];
@@ -2694,26 +3403,15 @@ const App: React.FC = () => {
     // Notificación opcional (silenciosa en modo actual)
     showNotification('APU eliminado','info');
   };
-  const addBudgetRowWithApu = (apuId:string)=>{
-    const newRows = [...rows, { id: uid(), apuId, metrados: 1 }]; setRows(newRows); saveBudget(newRows); setTab('presupuesto'); showNotification('Partida agregada','success');
-  };
-
-  // Presupuesto: partidas solo con APU (sin editor A-D en presupuesto)
-  const [budgetExpandedId] = useState<string|null>(null);
-  const [budgetExpandedForm] = useState<any|null>(null);
-  const toggleExpandBudgetRow = (_rowId:string)=>{};
-  const budgetUpdateFormSecRow = (_secKey:string, _index:number, _patch:any)=>{};
-  const budgetAddFormSecRow = (_secKey:string)=>{};
-  const budgetDelFormSecRow = (_secKey:string, _index:number)=>{};
-  const saveBudgetExpanded = ()=>{};
+  // (Eliminado) Estados de edición inline de presupuesto no utilizados actualmente
 
   // Presupuesto
   // Capítulos (múltiples)
   type Chapter = { id:string; letter:string; title:string; subChapters?: { id:string; title:string }[] };
-  const loadChapters = ():Chapter[]=>{ try{ return JSON.parse(localStorage.getItem('apu-chapters')||'[]'); }catch{ return []; } };
-  const saveChapters = (list:Chapter[])=>{ try{ localStorage.setItem('apu-chapters', JSON.stringify(list)); }catch{} };
-  const loadCurrentChapter = ()=>{ try{ return localStorage.getItem('apu-current-chapter') || ''; }catch{ return ''; } };
-  const saveCurrentChapter = (id:string)=>{ try{ localStorage.setItem('apu-current-chapter', id); }catch{} };
+  const loadChapters = React.useCallback(():Chapter[]=>{ try{ return JSON.parse(localStorage.getItem('apu-chapters')||'[]'); }catch{ return []; } }, []);
+  const saveChapters = React.useCallback((list:Chapter[])=>{ try{ localStorage.setItem('apu-chapters', JSON.stringify(list)); }catch{} }, []);
+  const loadCurrentChapter = React.useCallback(()=>{ try{ return localStorage.getItem('apu-current-chapter') || ''; }catch{ return ''; } }, []);
+  const saveCurrentChapter = React.useCallback((id:string)=>{ try{ localStorage.setItem('apu-current-chapter', id); }catch{} }, []);
   const [chapters, setChapters] = useState<Chapter[]>(()=> loadChapters());
   const [currentChapterId, setCurrentChapterId] = useState<string>(()=>{
     const c = loadCurrentChapter();
@@ -2777,75 +3475,15 @@ const App: React.FC = () => {
     const next = rows.map(r=> r.id===rowId? { ...r, chapterId } : r);
     setRows(next); saveBudget(next);
   };
-  const loadBudget = ()=>{ try{ return JSON.parse(localStorage.getItem('apu-budget')||'[]'); }catch{ return []; } };
-  const saveBudget = (newRows:any[])=>{ try{ localStorage.setItem('apu-budget', JSON.stringify(newRows)); }catch{} };
+  const loadBudget = React.useCallback(()=>{ try{ return JSON.parse(localStorage.getItem('apu-budget')||'[]'); }catch{ return []; } }, []);
+  const saveBudget = React.useCallback((newRows:any[])=>{ try{ localStorage.setItem('apu-budget', JSON.stringify(newRows)); }catch{} }, []);
   const [rows, setRows] = useState<any[]>(()=>{
     // Cargar todo lo guardado, incluyendo filas sin APU
     const saved = (loadBudget()||[]);
     return saved.length? saved : [];
   });
 
-  // Seed inicial: APU vacío + capítulo/partida/subpartida de ejemplo si no existe nada
-  useEffect(()=>{
-    try{
-      // 1) Biblioteca: asegurar al menos un APU vacío listo para rellenar
-      let seedApuId: string | null = null;
-      if((customApus||[]).length === 0){
-        const demoApu = {
-          id: 'custom_'+uid(),
-          codigo: 'CUST',
-          codigoExterno: '',
-          descripcion: 'APU vacío (ejemplo)',
-          unidadSalida: 'm2',
-          items: [],
-          secciones: {
-            materiales: [{ descripcion:'', unidad:'', cantidad:0, pu:0 }],
-            equipos: [{ descripcion:'', unidad:'', cantidad:0, pu:0 }],
-            manoObra: [{ descripcion:'', unidad:'', cantidad:0, pu:0 }],
-            varios: [{ descripcion:'', unidad:'', cantidad:0, pu:0 }],
-            extras: [],
-            __titles: {
-              materiales: 'A.- MATERIALES',
-              equipos: 'B.- EQUIPOS, MAQUINARIAS Y TRANSPORTES',
-              manoObra: 'C.- MANO DE OBRA',
-              varios: 'D.- VARIOS',
-            }
-          }
-        } as any;
-        const nextLib = [demoApu];
-        saveLibrary(nextLib);
-        seedApuId = demoApu.id;
-      } else {
-        const found = customApus.find(a=> (a.descripcion||'').toLowerCase().includes('apu vacío'));
-        seedApuId = found?.id || null;
-      }
-
-      // 2) Capítulos: crear capítulo A y subcapítulo si no hay ninguno
-      if((chapters||[]).length === 0){
-        const chId = uid();
-        const scId = uid();
-        const ch = { id: chId, letter: 'A', title: 'CAPÍTULO 1', subChapters: [ { id: scId, title: 'Subcapítulo 1' } ] } as any;
-        const list = [ch];
-        setChapters(list); saveChapters(list);
-        setCurrentChapterId(chId); saveCurrentChapter(chId);
-      }
-
-      // 3) Partidas: crear una partida 1 con subpartida 1 enlazada al APU vacío si no hay ninguna fila
-      if((rows||[]).length === 0){
-        const chId = (chapters[0]?.id) || loadChapters()[0]?.id || uid();
-        if(!chapters.length){
-          // En caso extremo de carrera, asegurar capítulo base
-          const ch = { id: chId, letter: 'A', title: 'CAPÍTULO 1', subChapters: [ { id: uid(), title: 'Subcapítulo 1' } ] } as any;
-          setChapters([ch]); saveChapters([ch]); setCurrentChapterId(chId); saveCurrentChapter(chId);
-        }
-        const sub = { id: uid(), descripcion: 'Subpartida 1', unidadSalida: 'm2', metrados: 1, apuIds: seedApuId? [seedApuId] : [] as string[], overrideUnitPrice: undefined as number|undefined, overrideTotal: undefined as number|undefined };
-        const nueva = { id: uid(), chapterId: chId, codigo: '', descripcion: 'Partida 1', unidadSalida: 'm2', metrados: 0, apuId: null as any, apuIds: [] as string[], subRows: [sub] } as any;
-        const list = [nueva];
-        setRows(list); saveBudget(list);
-      }
-    }catch(err){ /* noop */ }
-     
-  }, []);
+  // (removido) Seed de ejemplo: ya no se crean capítulos/partidas por defecto al cargar.
   const addRow = ()=>{
     if(!chapters.length){ addChapter(); }
     if(!chapters.length){ return; }
@@ -2854,9 +3492,10 @@ const App: React.FC = () => {
     const nombre = prompt('Nombre/Descripción de la partida:') ?? '';
     // Si el usuario cancela ambas, no crear
     if (codigo === '' && nombre.trim() === '') { return; }
-    const nueva = { id: uid(), chapterId: currentChapterId || chapters[chapters.length-1].id, apuId: null, apuIds: [] as string[], metrados: 0, codigo: codigo.trim(), descripcion: nombre.trim(), unidadSalida: '' };
+    const nueva = { id: uid(), chapterId: currentChapterId || chapters[chapters.length-1].id, apuId: null, apuIds: [] as string[], metrados: 0, codigo: codigo.trim(), descripcion: nombre.trim(), unidadSalida: '', _noAutoApu: true } as any;
     const newRows = [...rows, nueva];
     setRows(newRows); saveBudget(newRows); showNotification('Partida agregada','success');
+    // No abrir el selector automáticamente; la asignación será manual cuando el usuario lo solicite
   };
   const updRow = (id:string, patch:any)=>{ const newRows = rows.map(r=> r.id===id? { ...r, ...patch }: r); setRows(newRows); saveBudget(newRows); };
   const delRow = (id:string)=>{ const newRows = rows.filter(r=> r.id!==id); setRows(newRows); saveBudget(newRows); showNotification('Partida eliminada','info'); };
@@ -2864,8 +3503,45 @@ const App: React.FC = () => {
     const idx = rows.findIndex(r=> r.id===id);
     if(idx<0) return;
     const src = rows[idx];
-    const clone = { ...src, id: uid(), order: (typeof src.order === 'number' ? src.order + 1 : undefined) };
-    const next = [...rows.slice(0, idx+1), clone, ...rows.slice(idx+1)];
+    const nuevoNombreInput = prompt('Nombre para la partida duplicada:', (src.descripcion || '').trim());
+    if (nuevoNombreInput === null) return; // cancelar si el usuario cierra/cancela
+    const nuevoNombre = (nuevoNombreInput || '').trim() || ((src.descripcion || '').trim() ? `${(src.descripcion||'').trim()} (copia)` : 'Sin nombre');
+    // Elegir capítulo destino
+    let targetChapterId = src.chapterId;
+    try {
+      if (Array.isArray(chapters) && chapters.length > 0) {
+        const options = chapters.map((c, i) => `${i+1}. ${c.letter} — ${c.title}`).join('\n');
+        const hint = chapters.findIndex(c => c.id === src.chapterId) + 1;
+        const chapterAns = prompt(`¿A qué capítulo enviar la copia?\n${options}\nEscribe el número (1-${chapters.length}) o deja vacío para mantener (${hint>0?hint:1}).`, '');
+        if (chapterAns !== null) {
+          const num = parseInt(String(chapterAns).trim(), 10);
+          if (Number.isFinite(num) && num >= 1 && num <= chapters.length) {
+            targetChapterId = chapters[num - 1].id;
+          }
+        }
+      }
+    } catch {}
+
+    // Construir copia y posicionarla
+    const clone = { ...src, id: uid(), chapterId: targetChapterId, descripcion: nuevoNombre, order: (typeof src.order === 'number' ? src.order + 1 : undefined) };
+    let next: any[] = [];
+    if (targetChapterId === src.chapterId) {
+      // Insertar justo debajo de la original
+      next = [...rows.slice(0, idx+1), clone, ...rows.slice(idx+1)];
+    } else {
+      // Insertar al final del capítulo destino (después del último row con ese chapterId)
+      const lastIdxInTarget = (()=>{
+        let last = -1;
+        for (let i = 0; i < rows.length; i++) if (rows[i].chapterId === targetChapterId) last = i;
+        return last;
+      })();
+      if (lastIdxInTarget >= 0) {
+        next = [...rows.slice(0, lastIdxInTarget+1), clone, ...rows.slice(lastIdxInTarget+1)];
+      } else {
+        // Si el capítulo destino aún no tiene filas, agregamos al final del arreglo
+        next = [...rows, clone];
+      }
+    }
     setRows(next); saveBudget(next); showNotification('Partida duplicada','success');
   };
 
@@ -2873,18 +3549,20 @@ const App: React.FC = () => {
   type BudgetDoc = { id: string; name: string; rows: any[]; chapters: any[]; currentChapterId: string; createdAt: number; updatedAt: number };
   const [budgetsMap, setBudgetsMap] = useLocalStorage<Record<string, BudgetDoc>>('apu-budgets', {} as Record<string, BudgetDoc>);
   const [activeBudgetId, setActiveBudgetId] = useLocalStorage<string | null>('apu-active-budget-id', null);
-  const budgetsList = React.useMemo(()=> Object.values(budgetsMap||{}).sort((a,b)=> (b.updatedAt||0)-(a.updatedAt||0)), [budgetsMap]);
   // Seed inicial si no hay presupuesto activo
+  const budgetSeedRan = React.useRef(false);
   useEffect(()=>{
+    if (budgetSeedRan.current) return;
     if(!activeBudgetId){
       const id = `b_${Date.now()}`;
-      const doc: BudgetDoc = { id, name: 'Borrador', rows: loadBudget()||[], chapters: loadChapters()||[], currentChapterId: (typeof loadCurrentChapter==='function'? loadCurrentChapter(): currentChapterId)||'', createdAt: Date.now(), updatedAt: Date.now() } as any;
+      // Crear presupuesto vacío por defecto (sin capítulos/filas)
+      const doc: BudgetDoc = { id, name: 'Borrador', rows: [], chapters: [], currentChapterId: '', createdAt: Date.now(), updatedAt: Date.now() } as any;
       const next = { ...(budgetsMap||{}), [id]: doc } as Record<string, BudgetDoc>;
       setBudgetsMap(next);
       setActiveBudgetId(id);
     }
-   
-  }, []);
+    budgetSeedRan.current = true;
+  }, [activeBudgetId, budgetsMap, loadBudget, loadChapters, loadCurrentChapter, setActiveBudgetId, setBudgetsMap, currentChapterId]);
   // Persistir cambios del presupuesto activo
   useEffect(()=>{
     if(!activeBudgetId) return;
@@ -2897,12 +3575,12 @@ const App: React.FC = () => {
   const switchBudget = (id:string)=>{
     const b = (budgetsMap||{})[id]; if(!b) return;
     setActiveBudgetId(id);
-    setChapters(b.chapters||[]); saveChapters(b.chapters||[]);
-    setRows(b.rows||[]); saveBudget(b.rows||[]);
-    setCurrentChapterId(b.currentChapterId||''); saveCurrentChapter(b.currentChapterId||'');
+    setChapters(Array.isArray(b.chapters)? b.chapters : []); saveChapters(Array.isArray(b.chapters)? b.chapters : []);
+    setRows(Array.isArray(b.rows)? b.rows : []); saveBudget(Array.isArray(b.rows)? b.rows : []);
+    setCurrentChapterId(typeof b.currentChapterId==='string'? b.currentChapterId : ''); saveCurrentChapter(typeof b.currentChapterId==='string'? b.currentChapterId : '');
     showNotification(`Presupuesto activo: ${b.name||id}`,'info');
   };
-  const newBudget = (mode:'empty'|'duplicate'='empty')=>{
+  const _newBudget = (mode:'empty'|'duplicate'='empty')=>{
     const id = `b_${Date.now()}`;
     const base = mode==='duplicate' ? { rows, chapters, currentChapterId } : { rows: [], chapters: [], currentChapterId: '' };
     const nameBase = mode==='duplicate' ? `Copia de ${(budgetsMap[activeBudgetId||'']?.name)||'Borrador'}` : 'Nuevo presupuesto';
@@ -2910,13 +3588,13 @@ const App: React.FC = () => {
     setBudgetsMap({ ...(budgetsMap||{}), [id]: doc });
     switchBudget(id);
   };
-  const renameBudget = (id:string)=>{
+  const _renameBudget = (id:string)=>{
     const curr = (budgetsMap||{})[id]; if(!curr) return;
     const val = prompt('Nuevo nombre del presupuesto:', curr.name || '') || curr.name;
     const upd = { ...curr, name: String(val||'') } as BudgetDoc;
     setBudgetsMap({ ...(budgetsMap||{}), [id]: upd });
   };
-  const deleteBudget = (id:string)=>{
+  const _deleteBudget = (id:string)=>{
     if(!confirm('¿Eliminar este presupuesto?')) return;
     const { [id]:_, ...rest } = (budgetsMap||{}) as Record<string, BudgetDoc>;
     setBudgetsMap(rest);
@@ -2932,8 +3610,65 @@ const App: React.FC = () => {
     }
   };
 
+  // Selección de proyecto desde el stick: carga snapshot reciente y sincroniza estado
+  const handleProjectSelect = React.useCallback((pid: string | null, skipUserSwitch?: boolean) => {
+    if(!pid){ setActiveProjectId(null); return; }
+    if(pid==='inline'){ setActiveProjectId('inline'); return; }
+    setActiveProjectId(pid);
+    try{
+      const norm = (s:string)=> (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+      const stick = (savedProjectsList||[]).find((p:any)=> String(p?.id||'')===String(pid));
+      if(!stick) return;
+      const name = String(stick.name||'');
+      const snaps = ensureArrayProjects(projects).filter((p:any)=> norm(p?.projectName||p?.name||'')===norm(name));
+      const snap = snaps.sort((a:any,b:any)=> (b?.createdAt||0) - (a?.createdAt||0))[0];
+      if(!snap) return;
+      // Recursos
+      if(snap.resourcesSnapshot){ try{ setResources(snap.resourcesSnapshot); }catch{} }
+      // Parámetros financieros
+      if(typeof snap.gg==='number') setGG(snap.gg);
+      if(typeof snap.util==='number') setUtil(snap.util);
+      if(typeof snap.iva==='number') setIva(snap.iva);
+      // Usuario activo
+      if(snap.savedByEmail && !skipUserSwitch){ setActiveUserEmail(String(snap.savedByEmail)); }
+      // Presupuesto/budget
+      const rowsNext = Array.isArray(snap.rows)? snap.rows : [];
+      const chNext = Array.isArray(snap.chapters)? snap.chapters : [];
+      const curId = String(snap.currentChapterId||'');
+  const projName = snap.projectName || stick.name || '';
+  const targetId = snap.budgetId ? String(snap.budgetId) : `b_${Date.now()}`;
+  const bName = projName ? `Presupuesto · ${projName}` : 'Presupuesto';
+      setBudgetsMap((prev:any)=>{
+        const prevMap = prev||{};
+        const exists = !!prevMap[targetId];
+        const base = exists ? prevMap[targetId] : { id: targetId, createdAt: Date.now() };
+        const doc = { ...base, id: targetId, name: bName, rows: rowsNext, chapters: chNext, currentChapterId: curId, updatedAt: Date.now() };
+        return { ...prevMap, [targetId]: doc };
+      });
+      setActiveBudgetId(targetId);
+      // Aplicar estado del snapshot al presupuesto activo
+      setChapters(chNext); saveChapters(chNext);
+      setRows(rowsNext); saveBudget(rowsNext);
+      setCurrentChapterId(curId); saveCurrentChapter(curId);
+      setTab('presupuesto');
+      // Silenciar mensajes al cargar desde stick
+    }catch{ /* noop */ }
+  }, [savedProjectsList, projects, setResources, setGG, setUtil, setIva, setActiveUserEmail, setBudgetsMap, setActiveBudgetId, setChapters, saveChapters, setRows, saveBudget, setCurrentChapterId, saveCurrentChapter, setTab, ensureArrayProjects, setActiveProjectId]);
+
+  // Cuando se selecciona un usuario con proyecto asignado, mostrar ese proyecto automáticamente
+  useEffect(()=>{
+    try{
+      const assigned = (activeUser as any)?.assignedProjectId || '';
+      if(!assigned) return;
+      if(String(activeProjectId||'') === String(assigned)) return;
+      const exists = (projectsCatalog||[]).some((p:any)=> String(p?.id||'')===String(assigned));
+      if(!exists) return;
+      handleProjectSelect(String(assigned), true);
+    }catch{}
+  }, [activeUserEmail, activeProjectId, projectsCatalog, handleProjectSelect, activeUser]);
+
   // Crear rápidamente una partida + subpartida que use el APU vacío (ejemplo)
-  const addExampleEmptyApu = ()=>{
+  const _addExampleEmptyApu = ()=>{
     // 1) Obtener o crear APU vacío
     let seed = customApus.find(a=> (a.descripcion||'').toLowerCase().includes('apu vacío')) as any;
     if(!seed){
@@ -2990,6 +3725,7 @@ const App: React.FC = () => {
   const loadPresetCasa1010 = (opts?:{ replace?: boolean })=>{
     const replace = opts?.replace !== false; // por defecto reemplaza
     // 1) Ajustar parámetros de proyecto según brief: GG+U 12% + Imprevistos 3%, IVA 0% (el total informado excluye IVA)
+    // Nota: esto no cambia el proyecto ni el usuario seleccionados
     setGG(0.12); localStorage.setItem('apu-gg', String(0.12));
     setUtil(0.03); localStorage.setItem('apu-util', String(0.03));
     setIva(0.00); localStorage.setItem('apu-iva', String(0.00));
@@ -3009,7 +3745,7 @@ const App: React.FC = () => {
       return id;
     };
     // Utilidades de búsqueda (post-aseguramiento)
-    const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
+  // const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
   const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
     const mkSub = (descr:string, unidad:string, qty:number, apuIds:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds, overrideUnitPrice, overrideTotal });
     // Asegurar y tomar ids
@@ -3125,6 +3861,153 @@ const App: React.FC = () => {
     showNotification('Preset “Casa 10×10” cargado en Presupuesto','success');
   };
 
+  // Cargar preset: Casa 60 m² (1 piso)
+  const loadPresetCasa60m2 = (opts?:{ replace?: boolean })=>{
+    const replace = opts?.replace !== false; // por defecto reemplaza
+    // 1) Ajustar parámetros financieros: GG 10% (imprevistos incluidos). No cambia proyecto/usuario
+    setGG(0.10); try{ localStorage.setItem('apu-gg', String(0.10)); }catch{}
+
+    // 2) Crear capítulo único
+    const chId = uid();
+    const chapter = { id: chId, letter: 'C', title: 'Casa 60 m² — 1 piso', subChapters: [] as { id:string; title:string }[] } as any;
+    const chNext = replace ? [chapter] : [...chapters, chapter];
+    setChapters(chNext); saveChapters(chNext); setCurrentChapterId(chId); saveCurrentChapter(chId);
+
+    // 3) Asegurar APUs necesarios
+    const ensureApu = (id:string, builder: ()=>any)=>{
+      let lib = [...customApus];
+      if(!lib.find(a=>a.id===id)){
+        const created = builder();
+        lib = [...lib, created];
+        saveLibrary(lib);
+      }
+      return id;
+    };
+    const apuIds = {
+      movTierra: ensureApu('apu_mov_tierra_lote', buildApuMovimientoTierraLote),
+      relleno: ensureApu('apu_relleno_compact_manual', buildApuRellenoCompactManual),
+      h20: ensureApu('apu_h20_obra_vibrado_m3', buildApuH20ObraVibradoM3),
+      enfiKg: ensureApu('apu_enfierradura_kg', buildApuEnfierraduraKg),
+      encofrado: ensureApu('apu_moldaje_terciado_m2', buildApuMoldajeTerciado),
+      clavosAlambre: ensureApu('apu_clavos_alambre_lote', buildApuClavosAlambreLote),
+      ladrilloU: ensureApu('apu_material_ladrillo_fiscal_u', buildApuMaterialLadrilloFiscalU),
+      morteroPega: ensureApu('apu_mortero_pega_lote', buildApuMorteroPegaLote),
+      techEstruct: ensureApu('apu_estructura_techumbre_madera', buildApuEstructuraTechumbreMadera),
+      tejaFibro: ensureApu('apu_cubierta_teja_fibrocemento_m2', buildApuCubiertaTejaFibrocementoM2),
+      fijacionesTecho: ensureApu('apu_fijaciones_techo_lote', buildApuFijacionesTechoLote),
+      aislCielo: ensureApu('apu_acond_termico_cielo_lana100', buildApuAcondTermCielo),
+      pintInt: ensureApu('apu_pintura_interior_latex_muros', buildApuPinturaInteriorLatex),
+      pintExt: ensureApu('apu_pintura_exterior_fibro', buildApuPinturaExteriorFibro),
+      pisoCer: ensureApu('apu_piso_ceramica_60x60', buildApuPisoCeramica),
+      ceramMuro: ensureApu('apu_revest_ceramico_muro_30x60_m2', buildApuRevestCeramicoMuro3060),
+      cieloYeso: ensureApu('apu_cielo_yeso_carton_12_5_sobre_perf', buildApuCieloRasoYesoCarton),
+      ptaExt: ensureApu('apu_puerta_exterior_acero_90x200_instalada', buildApuPuertaExteriorAcero),
+      ptaInt: ensureApu('apu_puerta_interior_mdf_70x200_instalada', buildApuPuertaInteriorMdf),
+      ventanaPVC: ensureApu('apu_ventana_pvc_100x100_instalada', buildApuVentanaPVC100x100),
+      herrajes: ensureApu('apu_herrajes_carpinteria_lote', buildApuHerrajesCarpinteriaLote),
+      kitBano: ensureApu('apu_kit_bano_economico_set', buildApuKitBanoEconomico),
+      kitCocina: ensureApu('apu_kit_cocina_economico_set', buildApuKitCocinaEconomico),
+      pvcDesague: ensureApu('apu_tuberias_pvc_desague_lote', buildApuTuberiasPVCDesagueLote),
+      pprAgua: ensureApu('apu_tuberias_ppr_agua_lote', buildApuTuberiasPPRAguaLote),
+      gas: ensureApu('apu_caneria_gas_lote', buildApuCaneriaGasLote),
+      tablero: ensureApu('apu_tablero_electrico_monofasico_u', buildApuTableroElectricoMonofasico),
+      cables: ensureApu('apu_cables_electricos_lote', buildApuCablesElectricosLote),
+      tubos: ensureApu('apu_tubos_canaletas_lote', buildApuTubosCanaletasLote),
+      tomaInt: ensureApu('apu_toma_interruptor_u', buildApuTomaInterruptorU),
+      mo30: ensureApu('apu_mo_30_materiales_nota', buildApuMO30SobreMaterialesNota),
+      gg10: ensureApu('apu_gg_imprev_10_nota', buildApuGGImprev10Nota),
+    } as const;
+
+    const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
+    const mkSub = (descr:string, unidad:string, qty:number, apuIdsArr:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds: apuIdsArr, overrideUnitPrice, overrideTotal });
+
+    // 4) Partidas y subpartidas
+    const presetRows: any[] = [];
+
+    // Partida 1: Movimiento de Tierras
+    chapter.subChapters.push({ id: uid(), title: '1 · Movimiento de Tierras' });
+    presetRows.push(mkRow('Movimiento de Tierras', 'lote', '1', [
+      mkSub('Movimiento de tierra (lote)', 'lote', 1, [apuIds.movTierra]),
+      mkSub('Material de relleno', 'm3', 5, [apuIds.relleno]),
+    ]));
+
+    // Partida 2: Fundaciones y Estructura
+    chapter.subChapters.push({ id: uid(), title: '2 · Fundaciones y Estructura' });
+    presetRows.push(mkRow('Fundaciones y Estructura', 'm3', '2', [
+      mkSub('Hormigón H20', 'm3', 15, [apuIds.h20]),
+      mkSub('Acero de refuerzo', 'kg', 600, [apuIds.enfiKg]),
+      mkSub('Madera para encofrado', 'm2', 200, [apuIds.encofrado]),
+      mkSub('Clavos y alambre (lote)', 'lote', 1, [apuIds.clavosAlambre]),
+    ]));
+
+    // Partida 3: Albañilería
+    chapter.subChapters.push({ id: uid(), title: '3 · Albañilería' });
+    presetRows.push(mkRow('Albañilería', 'm2', '3', [
+      mkSub('Ladrillo fiscal (material)', 'u', 3000, [apuIds.ladrilloU]),
+      mkSub('Mortero (lote)', 'lote', 1, [apuIds.morteroPega]),
+    ]));
+
+    // Partida 4: Techumbre
+    chapter.subChapters.push({ id: uid(), title: '4 · Techumbre' });
+    presetRows.push(mkRow('Techumbre', 'm2', '4', [
+      mkSub('Cerchas de pino', 'm2', 70, [apuIds.techEstruct]),
+      mkSub('Tejas de fibrocemento', 'm2', 70, [apuIds.tejaFibro]),
+      mkSub('Clavos y fijaciones (lote)', 'lote', 1, [apuIds.fijacionesTecho]),
+      mkSub('Aislante térmico', 'm2', 60, [apuIds.aislCielo]),
+    ]));
+
+    // Partida 5: Terminaciones Interiores
+    chapter.subChapters.push({ id: uid(), title: '5 · Terminaciones Interiores' });
+    presetRows.push(mkRow('Terminaciones Interiores', 'm2', '5', [
+      mkSub('Pintura látex interior', 'm2', 180, [apuIds.pintInt]),
+      mkSub('Pintura fachada', 'm2', 80, [apuIds.pintExt]),
+      mkSub('Cerámica para piso', 'm2', 60, [apuIds.pisoCer]),
+      mkSub('Cerámica baño/cocina', 'm2', 25, [apuIds.ceramMuro]),
+      mkSub('Mortero de pega (lote)', 'lote', 1, [apuIds.morteroPega]),
+      mkSub('Yeso-cartón para cielos', 'm2', 60, [apuIds.cieloYeso]),
+    ]));
+
+    // Partida 6: Carpintería y Ventanas
+    chapter.subChapters.push({ id: uid(), title: '6 · Carpintería y Ventanas' });
+    presetRows.push(mkRow('Carpintería y Ventanas', 'u', '6', [
+      mkSub('Puerta principal', 'u', 1, [apuIds.ptaExt]),
+      mkSub('Puertas interiores', 'u', 3, [apuIds.ptaInt]),
+      mkSub('Ventanas PVC 100×100', 'u', 6, [apuIds.ventanaPVC]),
+      mkSub('Herrajes (lote)', 'lote', 1, [apuIds.herrajes]),
+    ]));
+
+    // Partida 7: Instalaciones Sanitarias y Gas
+    chapter.subChapters.push({ id: uid(), title: '7 · Instalaciones Sanitarias y Gas' });
+    presetRows.push(mkRow('Instalaciones Sanitarias y Gas', 'set', '7', [
+      mkSub('Tuberías PVC desagüe (lote)', 'lote', 1, [apuIds.pvcDesague]),
+      mkSub('Tuberías PPR agua (lote)', 'lote', 1, [apuIds.pprAgua]),
+      mkSub('Kit baño económico', 'set', 1, [apuIds.kitBano]),
+      mkSub('Kit cocina económico', 'set', 1, [apuIds.kitCocina]),
+      mkSub('Cañería gas (lote)', 'lote', 1, [apuIds.gas]),
+    ]));
+
+    // Partida 8: Instalaciones Eléctricas
+    chapter.subChapters.push({ id: uid(), title: '8 · Instalaciones Eléctricas' });
+    presetRows.push(mkRow('Instalaciones Eléctricas', 'u', '8', [
+      mkSub('Cables eléctricos (lote)', 'lote', 1, [apuIds.cables]),
+      mkSub('Tablero eléctrico', 'u', 1, [apuIds.tablero]),
+      mkSub('Tomas e interruptores', 'u', 20, [apuIds.tomaInt]),
+      mkSub('Tubos/canaletas (lote)', 'lote', 1, [apuIds.tubos]),
+    ]));
+
+    // Partida 9: Costos Indirectos (referencial)
+    chapter.subChapters.push({ id: uid(), title: '9 · Costos Indirectos' });
+    presetRows.push(mkRow('Costos Indirectos', 'lote', '9', [
+      mkSub('Mano de obra 30% sobre materiales (ajustar manualmente si aplica)', 'lote', 1, [apuIds.mo30]),
+      mkSub('Gastos generales e imprevistos 10% (se aplica en parámetros financieros)', 'lote', 1, [apuIds.gg10]),
+    ]));
+
+    // 5) Persistir
+    const finalRows = replace ? presetRows : [...rows, ...presetRows];
+    setRows(finalRows); saveBudget(finalRows);
+    showNotification('Preset “Casa 60 m²” cargado en Presupuesto','success');
+  };
+
   // Preset: Piscina — crea un presupuesto con partidas específicas
   const loadPresetPiscina = (opts?:{ replace?: boolean })=>{
     const replace = opts?.replace !== false; // por defecto reemplaza
@@ -3144,7 +4027,7 @@ const App: React.FC = () => {
       }
       return id;
     };
-    const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
+  // const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
   const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
     const mkSub = (descr:string, unidad:string, qty:number, apuIds:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds, overrideUnitPrice, overrideTotal });
 
@@ -3205,7 +4088,7 @@ const App: React.FC = () => {
       }
       return id;
     };
-    const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
+  // const find = (k:string)=> (allApus.find(a=> a.id===k) || customApus.find(a=>a.id===k)) || null;
     const mkRow = (descr:string, unidad:string, codigo:string, subRows:any[])=> ({ id: uid(), chapterId: chId, codigo, descripcion: descr, unidadSalida: unidad, metrados: 0, apuId: null, apuIds: [], subRows } as any);
     const mkSub = (descr:string, unidad:string, qty:number, apuIds:string[] = [], overrideUnitPrice?:number, overrideTotal?:number)=> ({ id: uid(), descripcion: descr, unidadSalida: unidad, metrados: qty, apuIds, overrideUnitPrice, overrideTotal });
 
@@ -3270,18 +4153,205 @@ const App: React.FC = () => {
   const [apuDetail, setApuDetail] = useState<{open:boolean; id:string|null}>({open:false, id:null});
   const openApuDetail = (id:string)=> setApuDetail({open:true, id});
   const closeApuDetail = ()=> setApuDetail({open:false, id:null});
-  const handleSaveApuDetail = (id:string, secciones:any)=>{
-    const mine = !!customApus.find(a=>a.id===id);
-    if(mine){
-      const next = customApus.map(x=> x.id===id? { ...x, secciones } : x);
+  const handleSaveApuDetail = (id:string, payload:any)=>{
+    const { secciones, descripcion, unidadSalida, categoria } = (payload || {}) as any;
+    const isCustom = !!customApus.find(a=> String(a?.id||'')===String(id));
+    if (isCustom) {
+      // Actualiza el APU de usuario; forzamos que cálculos usen secciones (anulando items)
+      const next = customApus.map(x=> {
+        if(x.id!==id) return x;
+        return {
+          ...x,
+          descripcion: (descripcion!=null? descripcion : x.descripcion),
+          unidadSalida: (unidadSalida!=null? unidadSalida : x.unidadSalida),
+          categoria: (categoria!=null? categoria : (x as any).categoria || ''),
+          secciones: secciones ?? (x as any).secciones,
+          items: undefined,
+        };
+      });
       saveLibrary(next);
       showNotification('APU actualizado','success');
-      // Mantener modal abierto y refrescar datos
-      setApuDetail({ open:true, id });
-    } else {
+      // Cerrar modal tras guardar para evitar estados inconsistentes
+      setApuDetail({ open:false, id:null });
+      return;
+    }
+    // Promoción: clonar desde catálogo por defecto a la biblioteca del usuario
+    try{
+      const base = getApuById(id) as any; // puede venir del catálogo por defecto
+      if(!base){ throw new Error('notfound'); }
+      const created = {
+        id: base.id,
+        descripcion: (descripcion!=null? descripcion : base.descripcion),
+        unidadSalida: (unidadSalida!=null? unidadSalida : base.unidadSalida),
+        categoria: (categoria!=null? categoria : (base.categoria || '')),
+        // prioridad a secciones editadas; removemos items para que unitCost use secciones
+        secciones: secciones,
+        items: undefined,
+      } as any;
+      const next = [...(customApus||[]), created];
+      saveLibrary(next);
+      showNotification('APU copiado del catálogo y guardado','success');
+      setApuDetail({ open:false, id:null });
+    } catch {
       showNotification('APU no encontrado','error');
     }
   };
+
+  // ===== Limpieza de biblioteca: duplicados e incompletos =====
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const handleMergeApus = (targetId: string, dupIds: string[], removeDup: boolean) => {
+    try{
+      const aliases = readAliasMap();
+      const nextAliases = { ...(aliases||{}) } as Record<string,string>;
+      for(const d of dupIds){ nextAliases[d] = targetId; }
+      writeAliasMap(nextAliases);
+
+      if (removeDup) {
+        const keep = new Set([targetId]);
+        const next = (allApus||[]).filter(a => keep.has(a.id) || !dupIds.includes(a.id));
+        saveLibrary(next);
+      }
+      showNotification('Fusión de APUs completada','success');
+    }catch{ showNotification('No se pudo completar la fusión','error'); }
+  };
+
+  // ===== Utilidades: creación automática de APU por similitud de nombre =====
+  const _normTxt = React.useCallback((s:string)=> (s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim(), []);
+  const _tokenize = React.useCallback((s:string)=> _normTxt(s).split(/[^a-z0-9áéíóúüñ]+/i).filter(Boolean), [_normTxt]);
+  const _simScore = React.useCallback((a:string, b:string)=>{
+    const A = _tokenize(a), B = _tokenize(b);
+    if(!A.length || !B.length) return 0;
+    const setA = new Set(A), setB = new Set(B);
+    let inter = 0; for(const t of setA){ if(setB.has(t)) inter++; }
+    const jaccard = inter / (setA.size + setB.size - inter || 1);
+    const an = _normTxt(a), bn = _normTxt(b);
+    const incl = (bn.includes(an) || an.includes(bn)) ? 0.2 : 0;
+    const prefix = (an && bn.startsWith(an)) || (bn && an.startsWith(bn)) ? 0.1 : 0;
+    return jaccard + incl + prefix; // rango aprox 0..1.3
+  }, [_tokenize, _normTxt]);
+  const findBestApuTemplate = React.useCallback((name:string)=>{
+    const pool:any[] = [...(customApus||[]), ...(defaultApus||[])];
+    let best:any = null; let bestScore = 0;
+    for(const apu of pool){
+      const s = _simScore(name, String(apu?.descripcion||''));
+      if(s > bestScore){ bestScore = s; best = apu; }
+    }
+    return (bestScore >= 0.25) ? best : null; // umbral bajo para textos cortos
+  }, [customApus, _simScore]);
+  const deepClone = (obj:any)=> obj==null? obj : JSON.parse(JSON.stringify(obj));
+  const findRowOrSubById = (id:string)=>{
+    for(const r of rows){
+      if(r.id===id) return { row:r, sub:null };
+      if(Array.isArray(r.subRows)){
+        const s = r.subRows.find((x:any)=> x.id===id);
+        if(s) return { row:r, sub:s };
+      }
+    }
+    return { row:null, sub:null };
+  };
+  const createApuFromNameAndAssign = (rowId:string)=>{
+    const { row, sub } = findRowOrSubById(rowId);
+    const name = String(sub?.descripcion || row?.descripcion || 'APU sin título').trim();
+    const unit = String(sub?.unidadSalida || row?.unidadSalida || '').trim() || undefined;
+    const tpl = findBestApuTemplate(name);
+    const newId = `apu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
+    const created:any = {
+      id: newId,
+      descripcion: name || (tpl?.descripcion || 'APU sin título'),
+      unidadSalida: unit || tpl?.unidadSalida || 'm2',
+      categoria: tpl?.categoria || '',
+      // Preferimos clonar secciones si existen; si no, dejamos items (el modal las convierte si faltan)
+      secciones: deepClone(tpl?.secciones),
+      items: tpl?.secciones ? undefined : deepClone(tpl?.items || []),
+    };
+    const next = [...(customApus||[]), created];
+    saveLibrary(next);
+    // Asignar a la fila/subfila y abrir modal para edición
+    setTimeout(()=>{
+      assignApuToRow(created.id);
+      openApuDetail(created.id);
+    }, 0);
+  };
+
+  // Crear APU por nombre (para Calculadora) y devolver id
+  const createApuByName = React.useCallback((name:string, unit?:string)=>{
+    const tpl = findBestApuTemplate(name);
+    const newId = `apu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
+    const created:any = {
+      id: newId,
+      descripcion: name && name.trim() ? name.trim() : (tpl?.descripcion || 'APU sin título'),
+      unidadSalida: (unit && unit.trim()) || tpl?.unidadSalida || 'm2',
+      categoria: tpl?.categoria || '',
+      secciones: tpl?.secciones ? JSON.parse(JSON.stringify(tpl.secciones)) : undefined,
+      items: tpl?.secciones ? undefined : JSON.parse(JSON.stringify(tpl?.items || [])),
+    };
+    const next = [...(customApus||[]), created];
+    saveLibrary(next);
+    return created.id as string;
+  }, [customApus, saveLibrary, findBestApuTemplate]);
+
+  // Auto-crear y asignar APU cuando faltan APUs (Vista Presupuesto)
+  const autoCreatedSubsRef = useRef<Set<string>>(new Set());
+  const autoCreatedRowsRef = useRef<Set<string>>(new Set());
+  const ensureAutoApus = React.useCallback(() => {
+    try{
+      let changed = false;
+      const nextRowsLocal = rows.map(r => {
+        let rowChanged = false;
+        let nextR = r;
+
+        // 1) Nivel subpartidas
+        if (Array.isArray(r.subRows) && r.subRows.length > 0) {
+          const newSubs = r.subRows.map((s:any) => {
+            const hasApu = Array.isArray(s.apuIds) && s.apuIds.length > 0;
+            const hasOverride = typeof s.overrideTotal === 'number' && Number.isFinite(s.overrideTotal);
+            const already = autoCreatedSubsRef.current.has(s.id);
+            if (hasApu || hasOverride || already || (s as any)._noAutoApu) return s;
+            // Crear APU por similitud de nombre y asignar
+            const name = String(s.descripcion || '').trim() || 'APU sin título';
+            const unit = String(s.unidadSalida || '').trim() || undefined;
+            const newId = createApuByName(name, unit);
+            autoCreatedSubsRef.current.add(s.id);
+            rowChanged = true; changed = true;
+            return { ...s, apuIds: [newId], overrideTotal: undefined };
+          });
+          if (rowChanged) nextR = { ...r, subRows: newSubs };
+        } else {
+          // 2) Nivel partida (sin subpartidas)
+          const ids: string[] = Array.isArray(r.apuIds) && r.apuIds.length ? r.apuIds : (r.apuId ? [r.apuId] : []);
+          const hasApu = ids.length > 0;
+          const hasOverride = typeof (r as any).overrideTotal === 'number' && Number.isFinite((r as any).overrideTotal);
+          const already = autoCreatedRowsRef.current.has(r.id);
+          if (!hasApu && !hasOverride && !already && !(r as any)._noAutoApu) {
+            const name = String(r.descripcion || '').trim() || 'APU sin título';
+            const unit = String((r as any).unidadSalida || '').trim() || undefined;
+            const newId = createApuByName(name, unit);
+            autoCreatedRowsRef.current.add(r.id);
+            rowChanged = true; changed = true;
+            nextR = { ...r, apuIds: [newId], apuId: null as any, overrideTotal: undefined } as any;
+          }
+        }
+
+        return nextR;
+      });
+      if (changed) {
+        setRows(nextRowsLocal); saveBudget(nextRowsLocal);
+        return true;
+      }
+      return false;
+    }catch{ /* noop */ }
+    return false;
+  }, [rows, createApuByName, saveBudget]);
+
+  // Ejecutar en cambios de filas
+  useEffect(()=>{ ensureAutoApus(); }, [rows, ensureAutoApus]);
+  // Ejecutar al cambiar de pestaña a presupuesto (por timing de carga/seed)
+  useEffect(()=>{
+    if(tab==='presupuesto'){
+      const t = setTimeout(()=>{ ensureAutoApus(); }, 0);
+      return ()=> clearTimeout(t);
+    }
+  }, [tab, ensureAutoApus]);
 
   // Plantillas presupuesto eliminadas
 
@@ -3303,13 +4373,11 @@ const App: React.FC = () => {
     const val = planillaPending;
     if(!val){ setPlanillaModalOpen(false); return; }
     const replace = (planillaMode !== 'append');
-    if(val==='Casa 10×10'){ loadPresetCasa1010({ replace }); }
+  if(val==='Casa 10×10'){ loadPresetCasa1010({ replace }); }
+  else if(val==='Casa 60 m²'){ loadPresetCasa60m2({ replace }); }
     else if(val==='Piscina'){ loadPresetPiscina({ replace }); }
     else if(val==='Fosa Séptica'){ loadPresetFosaSeptica({ replace }); }
-    // Limpiar selecciones y datos inline de proyecto/usuario
-    try{ setActiveProjectId(null); }catch{}
-    try{ setActiveUserEmail(null); }catch{}
-    try{ setProjectInfo({}); }catch{}
+    // Mantener proyecto y usuario actuales (no cambiar selección al cargar preset)
     setPlanillaSelect('');
     setPlanillaPending('');
     setPlanillaModalOpen(false);
@@ -3355,20 +4423,32 @@ const App: React.FC = () => {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importReplace, setImportReplace] = useState(false);
+  const [importKeepMeta, setImportKeepMeta] = useState(true);
   const [importLog, setImportLog] = useState<string[]>([]);
   const norm = (s:string)=> (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
   const findApuByKey = (key:string)=>{
-    const k = norm(key);
+    const k = norm(applySynonyms(key));
     if(!k) return null as any;
     // id exacto
     const byId = allApus.find(a=> norm(a.id)===k);
     if(byId) return byId;
     // sin búsqueda por código externo; usar solo id/descripcion
     // match por descripción (mejor startsWith)
-    const starts = allApus.find(a=> norm(a.descripcion).startsWith(k));
+    const starts = allApus.find(a=> norm(applySynonyms(a.descripcion)).startsWith(k));
     if(starts) return starts;
-    const contains = allApus.find(a=> norm(a.descripcion).includes(k));
-    return contains || null;
+    const contains = allApus.find(a=> norm(applySynonyms(a.descripcion)).includes(k));
+    if (contains) return contains;
+    // fallback por similitud con catálogo completo
+    try{
+      const pool:any[] = [...(allApus||[]), ...(defaultApus as any||[])];
+      let best:any = null; let bestScore = 0;
+      for(const apu of pool){
+        const s = similarityScore(String(key||''), String(apu?.descripcion||''));
+        if(s > bestScore){ bestScore = s; best = apu; }
+      }
+      if(bestScore >= 0.35) return best;
+    }catch{}
+    return null;
   };
   const parseImport = (text:string)=>{
     const lines = (text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
@@ -3419,7 +4499,7 @@ const App: React.FC = () => {
     });
     const newRows: any[] = [];
     const missing: string[] = [];
-    for(const [key, arr] of groups){
+  for(const [_key, arr] of groups){
       const first = arr[0];
       const chapterId = ensureChapter(first.cap, 'CAPÍTULO '+(first.cap||''));
       const subRows = arr.map((it)=>{
@@ -3437,6 +4517,44 @@ const App: React.FC = () => {
     const merged = importReplace ? newRows : [...rows, ...newRows];
     setChapters(chList); saveChapters(chList);
     setRows(merged); saveBudget(merged);
+    // Asignar proyecto y usuario al importar (opcional)
+    try{
+      const keepMeta = importReplace && importKeepMeta && (!!activeProjectId || !!activeUserEmail);
+      if(keepMeta){
+        // Mantener proyecto y usuario sin renombrar el presupuesto
+      } else {
+      // 1) Determinar o crear proyecto en el stick
+      let projId = activeProjectId || null;
+      let projName = '';
+      const nowName = `Proyecto importado ${new Date().toLocaleDateString('es-CL')} ${new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`;
+      if(projId){
+        const found = (savedProjectsList||[]).find((p:any)=> String(p?.id||'')===String(projId));
+        projName = found?.name || (projectInfo?.nombreProyecto || nowName);
+        // actualizar metadata mínima
+        setSavedProjectsList((prev:any[] = [])=> prev.map(p=> String(p?.id||'')===String(projId) ? { ...p, updatedAt: Date.now() } : p));
+      } else {
+        // crear uno nuevo con nombre desde projectInfo si existe
+        projName = projectInfo?.nombreProyecto || nowName;
+        const newId = `p_${Date.now()}`;
+        const entry = { id: newId, name: projName, client: projectInfo?.propietario || '', location: [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', '), fecha: projectInfo?.fecha || '', plazoDias: projectInfo?.plazoDias || undefined, createdAt: Date.now(), updatedAt: Date.now(), _source: 'from-import' } as any;
+        setSavedProjectsList((prev:any[] = [])=> [...prev, entry]);
+        setActiveProjectId(newId);
+        projId = newId;
+      }
+      // 2) Renombrar presupuesto activo con prefijo "Presupuesto · <Proyecto>"
+      if(activeBudgetId && projName){
+        setBudgetsMap((prev:any)=>{
+          const curr = (prev||{})[activeBudgetId];
+          if(!curr) return prev;
+          return { ...(prev||{}), [activeBudgetId]: { ...curr, name: `Presupuesto · ${projName}`, updatedAt: Date.now() } };
+        });
+      }
+      // 3) Si hay usuario activo, vincularlo a este proyecto
+      if(activeUserEmail && projId){
+        setUsers((prev:any[] = [])=> prev.map(u=> String(u?.email||'')===String(activeUserEmail) ? { ...u, assignedProjectId: projId } : u));
+      }
+      }
+    }catch{ /* noop */ }
     const logMsg = [`Importadas ${newRows.length} partidas (${items.length} filas).`, ...(missing.length? missing.slice(0,50): [])];
     setImportLog(logMsg);
     showNotification(`Importadas ${newRows.length} partidas`, missing.length? 'info' : 'success');
@@ -3509,12 +4627,10 @@ const App: React.FC = () => {
             let snapCurrentChapterRef: string = currentChapterId;
             if (nameChangeAction === 'create') {
               const newBudgetId = `b_${Date.now()}`;
-              // Para nuevo presupuesto, crear capítulo inicial por defecto
-              const defaultChapter = { id: uid(), letter: 'A', title: 'A — Información general' } as any;
-              const initialRow = { id: uid(), chapterId: defaultChapter.id, codigo: '', descripcion: 'Datos del proyecto', unidadSalida: '', metrados: 0, apuId: null, apuIds: [], subRows: [] } as any;
-              const seedRows = newBudgetFlow ? [initialRow] : [...rows];
-              const seedChapters = newBudgetFlow ? [defaultChapter] : [...chapters];
-              const seedCurrent = newBudgetFlow ? defaultChapter.id : currentChapterId;
+              // Nuevo presupuesto completamente vacío (sin capítulos ni filas)
+              const seedRows: any[] = newBudgetFlow ? [] : [...rows];
+              const seedChapters: any[] = newBudgetFlow ? [] : [...chapters];
+              const seedCurrent: string = newBudgetFlow ? '' : currentChapterId;
               const newDoc = {
                 id: newBudgetId,
                 name: budgetName,
@@ -3525,6 +4641,11 @@ const App: React.FC = () => {
                 updatedAt: Date.now(),
               } as any;
               setBudgetsMap((prev:any)=> ({ ...(prev||{}), [newBudgetId]: newDoc }));
+              // Aplicar inmediatamente el contenido semilla (vacío) al estado actual
+              setChapters(seedChapters); saveChapters(seedChapters);
+              setRows(seedRows); saveBudget(seedRows);
+              setCurrentChapterId(seedCurrent); saveCurrentChapter(seedCurrent);
+              // Activar el nuevo presupuesto sólo después de establecer el estado
               setActiveBudgetId(newBudgetId);
               snapshotBudgetId = newBudgetId;
               // Actualizar refs para snapshot
@@ -3680,21 +4801,10 @@ const App: React.FC = () => {
                 setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' });
                 setNewBudgetFlow(true);
                 setShowProjectInfoModalForSave(true);
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">+ Nuevo presupuesto</button>
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PlusIcon className="h-4 w-4"/> Nuevo proyecto</button>
               {/* Botón Importar partidas removido por solicitud */}
               <button onClick={()=>{
-                // Resolver fuente de proyecto (selección activa > inline form)
-                const proj = activeProject || null;
-                const locFromForm = [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', ');
-                const projectName = (proj?.name || projectInfo?.nombreProyecto || '').toString();
-                const projectClient = (proj?.client || projectInfo?.propietario || '').toString();
-                const projectLocation = (proj?.location || locFromForm || '').toString();
-                const projectFecha = (proj && 'fecha' in proj) ? (proj as any)?.fecha : (projectInfo?.fecha || '');
-                const projectPlazo = (proj && 'plazoDias' in proj) ? (proj as any)?.plazoDias : projectInfo?.plazoDias;
-                const projectId = proj?.id || null;
-
-                // El nombre del presupuesto será igual al nombre del proyecto (sin prompt)
-                // Abrir modal para completar información del proyecto antes de crear el stick
+                // Abrir modal para completar información del proyecto antes de crear o actualizar el stick
                 setShowProjectInfoModalForSave(true);
                 return;
               }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">💾 Guardar</button>
@@ -3728,6 +4838,7 @@ const App: React.FC = () => {
         <div className="flex gap-2 bg-slate-800 p-1 rounded-2xl w-fit">
           <button onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`}>Biblioteca de APU</button>
           <button onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`}>Presupuesto</button>
+          <button onClick={()=>setTab('calculadora')} className={`px-3 py-1 rounded-xl ${tab==='calculadora'?'bg-slate-900':'hover:bg-slate-700'}`}>Calculadora</button>
         </div>
 
         {/* Se eliminó la pestaña 'proyecto' y su UI asociada */}
@@ -3820,7 +4931,12 @@ const App: React.FC = () => {
                                     <div className="text-lg font-semibold">Importar partidas al presupuesto</div>
                                     <div className="text-sm text-slate-300">Formato por línea: Capítulo; Subcapítulo; Código; Descripción Partida; Unidad; Cantidad; APU (id o nombre). Acepta separador ; , o tab. Para múltiples APUs por línea, separa con |</div>
                                     <textarea className="min-h-[220px] bg-slate-900 border border-slate-700 rounded-xl p-2 font-mono text-xs" value={importText} onChange={e=>setImportText(e.target.value)} placeholder={'A; Movimiento de Tierras; 01-001; Excavación de zanjas; m3; 12; apu_exc_zanja_manual\nA; Movimiento de Tierras; 01-002; Relleno y compactación; m3; 8; Relleno y compactación manual'} />
-                                    <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={importReplace} onChange={e=>setImportReplace(e.target.checked)} />Reemplazar presupuesto actual</label>
+                                    <div className="grid gap-2 text-sm">
+                                      <label className="inline-flex items-center gap-2"><input type="checkbox" checked={importReplace} onChange={e=>setImportReplace(e.target.checked)} />Reemplazar presupuesto actual</label>
+                                      {importReplace && (
+                                        <label className="inline-flex items-center gap-2"><input type="checkbox" checked={importKeepMeta} onChange={e=>setImportKeepMeta(e.target.checked)} />No cambiar el nombre del proyecto ni el usuario</label>
+                                      )}
+                                    </div>
                                     {!!importLog.length && (
                                       <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-300">
                                         {importLog.map((l,i)=>(<div key={i}>• {l}</div>))}
@@ -3843,20 +4959,55 @@ const App: React.FC = () => {
                                 <div className="grid md:grid-cols-3 gap-2">
                                   <label className="text-sm text-slate-300 grid gap-1">
                                     <span>Descripción</span>
-                                    <input className="bg-slate-900 border border-slate-700 rounded-xl p-2" value={expandedForm.descripcion} onChange={e=>setExpandedForm((f:any)=>({...f, descripcion:e.target.value}))} />
+                                    <input className="bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={expandedForm.descripcion} onChange={e=>setExpandedForm((f:any)=>({...f, descripcion:e.target.value}))} />
                                   </label>
                                   <label className="text-sm text-slate-300 grid gap-1">
                                     <span>Unidad</span>
-                                    <input className="bg-slate-900 border border-slate-700 rounded-xl p-2" value={expandedForm.unidadSalida} onChange={e=>setExpandedForm((f:any)=>({...f, unidadSalida:e.target.value}))} />
+                                    {(() => {
+                                      const units = Array.from(new Set((allApus||[]).map((x:any)=> String(x?.unidadSalida||'').trim()).filter(Boolean))).sort();
+                                      const listId = `apu-units-${expandedId}`;
+                                      return (
+                                        <>
+                                          <input list={listId} className="bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={expandedForm.unidadSalida} onChange={e=>setExpandedForm((f:any)=>({...f, unidadSalida:e.target.value}))} />
+                                          <datalist id={listId}>
+                                            {units.map(u=> (<option key={u} value={u} />))}
+                                          </datalist>
+                                        </>
+                                      );
+                                    })()}
                                   </label>
                                   <label className="text-sm text-slate-300 grid gap-1">
                                     <span>Categoría</span>
-                                    <input className="bg-slate-900 border border-slate-700 rounded-xl p-2" value={expandedForm.categoria||''} onChange={e=>setExpandedForm((f:any)=>({...f, categoria:e.target.value}))} />
+                                    {(() => {
+                                      const cats = Array.from(new Set((allApus||[]).map((x:any)=> String(x?.categoria||'').trim()).filter(Boolean))).sort();
+                                      const listId = `apu-cats-${expandedId}`;
+                                      return (
+                                        <>
+                                          <input list={listId} className="bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={expandedForm.categoria||''} onChange={e=>setExpandedForm((f:any)=>({...f, categoria:e.target.value}))} />
+                                          <datalist id={listId}>
+                                            {cats.map(c=> (<option key={c} value={c} />))}
+                                          </datalist>
+                                        </>
+                                      );
+                                    })()}
                                   </label>
                                   
                                 </div>
                                 <div className="flex items-center justify-end">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {/* Renombrar APU (cambia descripción) */}
+                                    <button onClick={()=>{
+                                      const curr = String(expandedForm?.descripcion||'');
+                                      const name = (prompt('Nuevo nombre del APU:', curr)||'').trim();
+                                      if(!name) return;
+                                      setExpandedForm((f:any)=> ({...f, descripcion: name }));
+                                    }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Renombrar</button>
+                                    {/* Eliminar APU (usa handler global) */}
+                                    <button onClick={()=>{ if(!expandedId) return; handleDeleteApu(expandedId); setExpandedId(null); setExpandedForm(null); }} className="px-2 py-1 rounded-lg border border-slate-600 hover:bg-slate-700/30 text-xs">Eliminar</button>
+                                    {/* Agregar fila rápida a la primera sección disponible */}
+                                    {isMineById(expandedId||'') && (
+                                      <button onClick={addFormAnyRow} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">+ Fila</button>
+                                    )}
                                     {isMineById(expandedId||'') && (
                                     <button onClick={()=>{
                                       if(!confirm('¿Borrar TODAS las secciones y dejar solo una vacía?')) return;
@@ -3933,8 +5084,21 @@ const App: React.FC = () => {
                                                 const total = (Number(r.cantidad)||0) * (Number(r.pu)||0);
                                                 return (
                                                   <tr key={i} className="border-t border-slate-800">
-                                                    <td className="py-2 px-3"><input className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1" value={r.descripcion} onChange={e=>updateFormSecRow(sec.key, i, {descripcion:e.target.value})} /></td>
-                                                    <td className="py-2 px-3"><input className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1" value={r.unidad} onChange={e=>updateFormSecRow(sec.key, i, {unidad:e.target.value})} /></td>
+                                                    <td className="py-2 px-3"><input className="w-full bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-lg px-2 py-1" value={r.descripcion} onChange={e=>updateFormSecRow(sec.key, i, {descripcion:e.target.value})} /></td>
+                                                    <td className="py-2 px-3">
+                                                      {(()=>{
+                                                        const units = Array.from(new Set((allApus||[]).map((x:any)=> String(x?.unidadSalida||'').trim()).filter(Boolean))).sort();
+                                                        const listId = `apu-row-units-${expandedId}-${sec.key}`;
+                                                        return (
+                                                          <>
+                                                            <input list={listId} className="w-full bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-lg px-2 py-1" value={r.unidad} onChange={e=>updateFormSecRow(sec.key, i, {unidad:e.target.value})} />
+                                                            <datalist id={listId}>
+                                                              {units.map(u=> (<option key={u} value={u} />))}
+                                                            </datalist>
+                                                          </>
+                                                        );
+                                                      })()}
+                                                    </td>
                                                     <td className="py-2 px-3"><input type="number" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right" value={r.cantidad} onChange={e=>updateFormSecRow(sec.key, i, {cantidad: Number(e.target.value)||0})} /></td>
                                                     <td className="py-2 px-3">
                                                       <CurrencyInput
@@ -4005,8 +5169,21 @@ const App: React.FC = () => {
                                                 const total = (Number(r.cantidad)||0) * (Number(r.pu)||0);
                                                 return (
                                                   <tr key={i} className="border-t border-slate-800">
-                                                    <td className="py-2 px-3"><input className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1" value={r.descripcion||''} onChange={e=>updateFormExtraRow(secIdx, i, {descripcion:e.target.value})} /></td>
-                                                    <td className="py-2 px-3"><input className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1" value={r.unidad||''} onChange={e=>updateFormExtraRow(secIdx, i, {unidad:e.target.value})} /></td>
+                                                    <td className="py-2 px-3"><input className="w-full bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-lg px-2 py-1" value={r.descripcion||''} onChange={e=>updateFormExtraRow(secIdx, i, {descripcion:e.target.value})} /></td>
+                                                    <td className="py-2 px-3">
+                                                      {(()=>{
+                                                        const units = Array.from(new Set((allApus||[]).map((x:any)=> String(x?.unidadSalida||'').trim()).filter(Boolean))).sort();
+                                                        const listId = `apu-extra-units-${expandedId}-${secIdx}`;
+                                                        return (
+                                                          <>
+                                                            <input list={listId} className="w-full bg-slate-900 border border-transparent focus:border-transparent focus:ring-0 rounded-lg px-2 py-1" value={r.unidad||''} onChange={e=>updateFormExtraRow(secIdx, i, {unidad:e.target.value})} />
+                                                            <datalist id={listId}>
+                                                              {units.map(u=> (<option key={u} value={u} />))}
+                                                            </datalist>
+                                                          </>
+                                                        );
+                                                      })()}
+                                                    </td>
                                                     <td className="py-2 px-3"><input type="number" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right" value={Number(r.cantidad||0)} onChange={e=>updateFormExtraRow(secIdx, i, {cantidad: Number(e.target.value)||0})} /></td>
                                                     <td className="py-2 px-3">
                                                       <CurrencyInput
@@ -4085,7 +5262,29 @@ const App: React.FC = () => {
               }}
             />
             <CreateApuModal open={showEditApu} onClose={()=>{setShowEditApu(false); setApuEditing(null);} } onSave={handleSaveEditApu} initial={apuEditing} />
+            <ApuCleanupModal
+              open={cleanupOpen}
+              apus={allApus as any}
+              onClose={()=> setCleanupOpen(false)}
+              onMerge={(targetId, dupIds, removeDup)=> handleMergeApus(targetId, dupIds, removeDup)}
+              onEdit={(id)=> { setCleanupOpen(false); openApuDetail(id); }}
+            />
           </>
+        )}
+
+        {tab==='calculadora' && (
+          <Calculator
+            gg={gg}
+            util={util}
+            iva={iva}
+            onChangeGG={(v)=> setGG(v)}
+            onChangeUtil={(v)=> setUtil(v)}
+            onChangeIVA={(v)=> setIva(v)}
+            apus={allApus}
+            resources={resources}
+            onShowApuDetail={(id)=> openApuDetail(id)}
+            onCreateApuByName={(name, unit)=> createApuByName(name, unit)}
+          />
         )}
 
         {tab==='presupuesto' && (
@@ -4145,22 +5344,38 @@ const App: React.FC = () => {
                           <option value="inline">{titleCase(projectInfo?.nombreProyecto || 'Proyecto')}{projectInfo?.propietario? ` — ${titleCase(projectInfo?.propietario)}`:''}</option>
                         )}
                       </select>
-                      {/* Acción para modificar datos del proyecto (icono) */}
-                      {(
-                        (activeProjectId && activeProjectId !== '')
-                      ) && (
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                            title="Modificar datos del proyecto"
-                            aria-label="Modificar datos del proyecto"
-                            onClick={()=> setShowProjectInfoModalForSave(true)}
-                          >
-                            <PencilSquareIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
+                      {/* Acciones de proyecto: siempre visibles */}
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Agregar proyecto"
+                          aria-label="Agregar proyecto"
+                          onClick={()=>{ setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' }); setNewBudgetFlow(true); setShowProjectInfoModalForSave(true); }}
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Modificar datos del proyecto"
+                          aria-label="Modificar datos del proyecto"
+                          onClick={()=> setShowProjectInfoModalForSave(true)}
+                          disabled={!activeProjectId}
+                        >
+                          <PencilSquareIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Eliminar proyecto"
+                          aria-label="Eliminar proyecto"
+                          onClick={handleDeleteProjectQuick}
+                          disabled={!activeProjectId}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                       {activeProject && (
                         <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-300 max-w-full text-center">
                           <div className="flex items-baseline whitespace-normal break-words">
@@ -4194,46 +5409,48 @@ const App: React.FC = () => {
                       <span className="text-xs text-slate-400 truncate max-w-[50%]" title={titleCase(activeUser?.profesion || '')}>Profesión: {titleCase(activeUser?.profesion || '—')}</span>
                     </div>
                     <div className="grid gap-2">
-                      <select
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
-                        value={activeUserEmail || ''}
-                        title={activeUser? `${titleCase(activeUser?.nombre||'')}${activeUser?.email? ' — '+activeUser.email:''}`: ''}
-                        onChange={(e)=> setActiveUserEmail(e.target.value || null)}
-                      >
-                        <option value="">Seleccionar…</option>
-                        {users.map((u:any, idx:number)=> (
-                          <option key={u.email || idx} value={u.email || ''}>{titleCase(u.nombre) || u.email || `Usuario ${idx+1}`}</option>
-                        ))}
-                      </select>
-                      {/* Botonera de acciones de usuario */}
-                      <div className="flex items-center justify-center gap-1 pt-1">
-                        <button
-                          type="button"
-                          onClick={handleCreateUserQuick}
-                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                          title="Crear usuario"
-                          aria-label="Crear usuario"
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
+                          value={activeUserEmail || ''}
+                          title={activeUser? `${titleCase(activeUser?.nombre||'')}${activeUser?.email? ' — '+activeUser.email:''}`: ''}
+                          onChange={(e)=> setActiveUserEmail(e.target.value || null)}
                         >
-                          <UserPlusIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleEditUserQuick}
-                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                          title="Editar usuario seleccionado"
-                          aria-label="Editar usuario seleccionado"
-                        >
-                          <PencilSquareIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDeleteUserQuick}
-                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                          title="Eliminar usuario seleccionado"
-                          aria-label="Eliminar usuario seleccionado"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
+                          <option value="">Seleccionar…</option>
+                          {users.map((u:any, idx:number)=> (
+                            <option key={u.email || idx} value={u.email || ''}>{titleCase(u.nombre) || u.email || `Usuario ${idx+1}`}</option>
+                          ))}
+                        </select>
+                        {/* Botonera de acciones de usuario (derecha) */}
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={handleCreateUserQuick}
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Crear usuario"
+                            aria-label="Crear usuario"
+                          >
+                            <UserPlusIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleEditUserQuick}
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Editar usuario seleccionado"
+                            aria-label="Editar usuario seleccionado"
+                          >
+                            <PencilSquareIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDeleteUserQuick}
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Eliminar usuario seleccionado"
+                            aria-label="Eliminar usuario seleccionado"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                       {activeUser && (
                         <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-300 max-w-full text-center">
@@ -4274,6 +5491,7 @@ const App: React.FC = () => {
                       >
                         <option value="">Seleccionar…</option>
                         <option value="Casa 10×10">Casa 10×10</option>
+                        <option value="Casa 60 m²">Casa 60 m²</option>
                         <option value="Piscina">Piscina</option>
                         <option value="Fosa Séptica">Fosa Séptica</option>
                       </select>
@@ -4382,6 +5600,49 @@ const App: React.FC = () => {
                               </table>
                             </div>
                           )}
+                          {Array.isArray(r.subRows) && r.subRows.length > 0 && (
+                            <div className="mt-3">
+                              <div className="text-[11px] text-slate-300 mb-1">Subpartidas:</div>
+                              <div className="grid gap-2">
+                                {r.subRows.map((s:any, sj:number)=>{
+                                  const sIds: string[] = Array.isArray(s.apuIds) ? s.apuIds : [];
+                                  const sQty = Number(s.metrados || 0);
+                                  return (
+                                    <div key={s.id || sj} className="rounded-lg border border-slate-700 p-2 bg-slate-900/60">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-sm text-slate-200 truncate" title={s.descripcion || 'Subpartida'}>
+                                          {(s.descripcion && s.descripcion.trim()) || 'Subpartida'}
+                                        </div>
+                                        <div className="text-[11px] text-slate-400 whitespace-nowrap">
+                                          {sQty} {s.unidadSalida || ''}
+                                        </div>
+                                      </div>
+                                      {sIds.length > 0 && (
+                                        <div className="mt-1 pl-2">
+                                          {sIds.map((id:string)=>{
+                                            try{
+                                              const apu = getApuById(id);
+                                              const un = apu?.unidadSalida || 'GL';
+                                              const pu = (()=>{ try{ return unitCost(apu, resources).unit; }catch{ return 0; } })();
+                                              return (
+                                                <div key={id} className="flex items-center gap-2 text-[11px]">
+                                                  <span className="text-slate-500">•</span>
+                                                  <button onClick={()=> openApuDetail(id)} className="text-slate-200 hover:underline text-left" title={apu.descripcion}>
+                                                    {apu.descripcion}
+                                                  </button>
+                                                  <span className="text-slate-400">— {un} · {fmt(pu)}</span>
+                                                </div>
+                                              );
+                                            }catch{ return null; }
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={()=>{ if(!confirm('¿Eliminar esta partida completa?')) return; delRow(r.id); }}
@@ -4389,7 +5650,7 @@ const App: React.FC = () => {
                           title="Eliminar partida"
                           aria-label="Eliminar partida"
                         >
-                          <TrashIcon className="h-5 w-5"/>
+                          <TrashIcon className="h-4 w-4"/>
                         </button>
                       </div>
                       {/* Se removieron Unidad, Cantidad, Unitario y Total en móvil */}
@@ -4415,7 +5676,7 @@ const App: React.FC = () => {
                     // Agregar subpartida al hacer click en la partida (pidiendo nombre)
                     const name = (prompt('Nombre de la subpartida:') || '').trim();
                     if(!name) return;
-                    const sub = { id: uid(), descripcion: name, apuIds: [] as string[], metrados: 1, unidadSalida: '', overrideUnitPrice: undefined as number|undefined, overrideTotal: undefined as number|undefined };
+                    const sub = { id: uid(), descripcion: name, apuIds: [] as string[], metrados: 1, unidadSalida: '', overrideUnitPrice: undefined as number|undefined, overrideTotal: undefined as number|undefined, _noAutoApu: true } as any;
                     const next = rows.map(r=> r.id===rowId? { ...r, subRows: [ ...(r.subRows||[]), sub ] } : r);
                     setRows(next); saveBudget(next); showNotification('Subpartida agregada','success');
                   }}
@@ -4533,10 +5794,9 @@ const App: React.FC = () => {
         apus={customApus}
         onCreateNew={()=>{
           const rowId = selectApuOpen.rowId; if(!rowId) return;
-          setPendingAssignRowId(rowId);
           setSelectApuOpen({open:false, rowId:null});
-          setTab('biblioteca');
-          setShowCreateApu(true);
+          // Crear por similitud y asignar; si no hay buen match, se crea vacío y se abre modal
+          createApuFromNameAndAssign(rowId);
         }}
       />
       {/* Modal detalle APU A–D */}
@@ -4546,82 +5806,24 @@ const App: React.FC = () => {
         apu={apuDetail.id ? getApuById(apuDetail.id) : null}
         fmt={fmt}
         resources={resources}
-        onSave={(secciones:any)=>{ if(apuDetail.id) handleSaveApuDetail(apuDetail.id, secciones); }}
+        onSave={(patch:any)=>{ if(apuDetail.id) handleSaveApuDetail(apuDetail.id, patch); }}
       />
     </div>
   </div>
   );
 }
 
-function SelectApuModal({open, onClose, onPick, apus, onCreateNew}:{open:boolean; onClose:()=>void; onPick:(id:string)=>void; apus:any[]; onCreateNew?: ()=>void}){
-  const [term, setTerm] = React.useState('');
-  if(!open) return null;
-  const list = (apus||[]).filter(a=> !term || (a.descripcion||'').toLowerCase().includes(term.toLowerCase()));
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl mx-4">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <h3 className="text-lg font-semibold">Seleccionar APU</h3>
-          <button onClick={onClose} className="text-slate-300 hover:text-white">×</button>
-        </div>
-        <div className="p-4 grid gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-300">Buscar:</span>
-            <input value={term} onChange={e=>setTerm(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm w-full" placeholder="Descripción del APU" />
-          </div>
-          {list.length === 0 ? (
-            <div className="text-sm text-slate-300">
-              No hay APUs creados para seleccionar. Puedes crear uno nuevo.
-            </div>
-          ) : (
-            <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-700">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-300">
-                    
-                    <th className="py-2 px-3">Descripción</th>
-                    <th className="py-2 px-3 w-28">Cat.</th>
-                    <th className="py-2 px-3 w-24">Unidad</th>
-                    <th className="py-2 px-3 w-20"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((a:any)=> (
-                    <tr key={a.id} className="border-t border-slate-800 hover:bg-slate-800/60">
-                          
-                          <td className="py-2 px-3">{a.descripcion}</td>
-                      <td className="py-2 px-3">{a.categoria||''}</td>
-                      <td className="py-2 px-3">{a.unidadSalida}</td>
-                      <td className="py-2 px-3 text-right">
-                        <button onClick={()=>onPick(a.id)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs">Seleccionar</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            {onCreateNew && (
-              <button onClick={onCreateNew} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">+ Crear nuevo APU</button>
-            )}
-            <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600 text-sm">Cerrar</button>
-          </div>
-        </div>
-      </div>
+// SelectApuModal ahora vive en components/ui/SelectApuModal.tsx
 
-    </div>
-  );
-}
-
-function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boolean; onClose:()=>void; apu:any; fmt:(n:number)=>string; resources:Record<string,any>; onSave:(secciones:any)=>void}){
+function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boolean; onClose:()=>void; apu:any; fmt:(n:number)=>string; resources:Record<string,any>; onSave:(patch:{ secciones:any; descripcion?:string; unidadSalida?:string; categoria?:string })=>void}){
   if(!open || !apu) return null;
-  // Construir secciones si no existen, derivando desde items
-  const buildFromItems = () => {
+  // Construir secciones si no existen, derivando desde items (memoizado por APU y recursos)
+  const secciones = React.useMemo(() => {
+    const existing = (apu as any).secciones;
+    if (existing) return existing;
     const secs: any = { materiales: [], equipos: [], manoObra: [], varios: [] };
-    (apu.items || []).forEach((it: any) => {
-      const r = resources[it.resourceId]; if (!r) return;
+    ((apu as any).items || []).forEach((it: any) => {
+      const r = (resources as any)[it.resourceId]; if (!r) return;
       const isCoef = it.tipo === 'coef';
       const cantidad = isCoef ? (Number(it.coef||0) * (1 + Number(it.merma||0))) : (1 / Math.max(1, Number(it.rendimiento||1)));
       const pu = Number(r.precio||0);
@@ -4635,9 +5837,12 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
       }
     });
     return secs;
-  };
-  const secciones = (apu as any).secciones || buildFromItems();
+  }, [apu, resources]);
   const metaInit = (secciones as any)?.__meta || {};
+  // Estado para metadatos editables del APU
+  const [apuMeta, setApuMeta] = React.useState<{ descripcion:string; unidadSalida:string; categoria:string }>(
+    { descripcion: String(apu.descripcion||''), unidadSalida: String(apu.unidadSalida||''), categoria: String((apu as any).categoria||'') }
+  );
   const sectionsOrder = [
     { key: 'materiales', title: 'A.- MATERIALES' },
     { key: 'equipos', title: 'B.- EQUIPOS, MAQUINARIAS Y TRANSPORTES' },
@@ -4649,6 +5854,8 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
   const [sectionTitles, setSectionTitles] = React.useState<Record<string,string>>({});
   React.useEffect(()=>{
     // Normalizar claves y clonar
+    // Refrescar metadatos al cambiar APU o al abrir
+    setApuMeta({ descripcion: String(apu.descripcion||''), unidadSalida: String(apu.unidadSalida||''), categoria: String((apu as any).categoria||'') });
     const knownKeys = ['materiales','equipos','manoObra','varios'];
     const base = (secciones as any) || {};
     const norm: any = {
@@ -4688,8 +5895,8 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
     // Títulos personalizados guardados
     const savedTitles = (secciones as any)?.__titles || {};
     setSectionTitles(savedTitles && typeof savedTitles==='object'? savedTitles : {});
-   
-  }, [apu?.id, open]);
+  
+  }, [open, apu, secciones]);
   const updRow = (key:string, idx:number, patch:any)=>{
     setFormSecs((f:any)=>{
       const rows = [...(f[key]||[])];
@@ -4755,11 +5962,60 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl mx-4">
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <div>
-            <div className="text-lg font-semibold">{apu.descripcion}</div>
-            <div className="text-xs text-slate-400">Unidad salida: {apu.unidadSalida || '—'}</div>
+          <div className="flex-1 grid gap-2">
+            <div className="grid md:grid-cols-3 gap-2">
+              <label className="text-xs text-slate-300 grid gap-1">
+                <span>Descripción</span>
+                <input className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded px-2 py-1 text-sm" value={apuMeta.descripcion} onChange={e=> setApuMeta(m=>({ ...m, descripcion: e.target.value }))} />
+              </label>
+              <label className="text-xs text-slate-300 grid gap-1">
+                <span>Unidad salida</span>
+                {(()=>{
+                  const commonUnits: string[] = ['m', 'm2', 'm3', 'kg', 'u', 'jornal', 'hora', 'día', 'ml', 'cm', 'mm'];
+                  const units: string[] = Array.from(new Set([apuMeta.unidadSalida, ...commonUnits].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+                  const listId = `apu-detail-units-${apu?.id||''}`;
+                  return (
+                    <>
+                      <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded px-2 py-1 text-sm" value={apuMeta.unidadSalida} onChange={e=> setApuMeta(m=>({ ...m, unidadSalida: e.target.value }))} />
+                      <datalist id={listId}>
+                        {units.map((u:string)=> (<option key={u} value={u} />))}
+                      </datalist>
+                    </>
+                  );
+                })()}
+              </label>
+              <label className="text-xs text-slate-300 grid gap-1">
+                <span>Categoría</span>
+                {(()=>{
+                  const commonCats: string[] = ['Obra gruesa','Terminaciones','Techumbre','Instalaciones sanitarias','Instalaciones eléctricas','Fachada','Servicios'];
+                  const cats: string[] = Array.from(new Set([apuMeta.categoria, ...commonCats].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+                  const listId = `apu-detail-cats-${apu?.id||''}`;
+                  return (
+                    <>
+                      <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded px-2 py-1 text-sm" value={apuMeta.categoria} onChange={e=> setApuMeta(m=>({ ...m, categoria: e.target.value }))} />
+                      <datalist id={listId}>
+                        {cats.map((c:string)=> (<option key={c} value={c} />))}
+                      </datalist>
+                    </>
+                  );
+                })()}
+              </label>
+            </div>
           </div>
           <div className="flex items-center gap-2">
+              <button
+                onClick={()=>{
+                  try {
+                    const payload = { apuId: String(apu?.id||''), descripcion: apuMeta.descripcion, unidadSalida: apuMeta.unidadSalida, metrados: 1 };
+                    localStorage.setItem('calculator-inject', JSON.stringify(payload));
+                  } catch {}
+                  onClose();
+                }}
+                className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-white text-xs"
+                title="Agregar este APU a la Calculadora"
+              >
+                Agregar a Calculadora
+              </button>
             <button
               onClick={()=>{
                 if(!confirm('¿Borrar TODAS las secciones y dejar solo una vacía?')) return;
@@ -4910,9 +6166,9 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
             </label>
           </div>
           <div className="flex justify-end gap-2 w-full md:w-auto">
-            <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-            <button onClick={()=>onSave({ ...formSecs, __titles: sectionTitles })} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Guardar</button>
-          </div>
+              <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
+              <button onClick={()=>onSave({ secciones: { ...formSecs, __titles: sectionTitles }, descripcion: apuMeta.descripcion, unidadSalida: apuMeta.unidadSalida, categoria: apuMeta.categoria })} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Guardar</button>
+            </div>
         </div>
         {/* Fin pie */}
       </div>
@@ -4921,7 +6177,7 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
 }
 
 // ====== Etiquetas ======
-function label2D(p){
+function _label2D(p){
   switch(p){
     case 'rect': return 'Rectángulo';
     case 'tabique': return 'Tabique';
@@ -4935,7 +6191,7 @@ function label2D(p){
     default: return p;
   }
 }
-function label3D(p){
+function _label3D(p){
   switch(p){
     case 'generico': return 'Genérico';
     case 'radier': return 'Radier';
@@ -4950,7 +6206,7 @@ function label3D(p){
     default: return p;
   }
 }
-function label1D(p){
+function _label1D(p){
   switch(p){
     case 'generico': return 'Genérico';
     case 'tuberia': return 'Tubería/trayecto';
@@ -4961,7 +6217,7 @@ function label1D(p){
   }
 }
 
-function labelKg(p){
+function _labelKg(p){
   switch(p){
     case 'generico': return 'Genérico';
     case 'barras_rectas': return 'Barras rectas';
@@ -4972,7 +6228,7 @@ function labelKg(p){
 }
 
 // ====== Componentes auxiliares ======
-function Num({label, value, onChange}){
+function _Num({label, value, onChange}){
   return (
     <label className="text-sm text-slate-300 grid gap-1">
       <span>{label}</span>
@@ -4982,7 +6238,7 @@ function Num({label, value, onChange}){
     </label>
   );
 }
-function Preview({value, unidad, onUse}){
+function _Preview({value, unidad, onUse}){
   const [justUsed, setJustUsed] = useState(false);
 
   const handleUse = () => {
@@ -5010,14 +6266,14 @@ function Preview({value, unidad, onUse}){
 }
 export default App;
 
-function Seg({on, onClick, children}){
+function _Seg({on, onClick, children}){
   return (
     <button onClick={onClick} className={`px-3 py-1 rounded-xl border ${on? 'bg-slate-900 border-slate-600' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'}`}>
       {children}
     </button>
   );
 }
-function Chk({label, checked, onChange}){
+function _Chk({label, checked, onChange}){
   return (
     <label className="text-sm text-slate-300 grid gap-1 items-center">
       <span>{label}</span>
@@ -5043,7 +6299,7 @@ function Modal({open, title, children, onClose}){
   );
 }
 
-function ProjectModal({open, initial, onClose, onSave}){
+function _ProjectModal({open, initial, onClose, onSave}){
   const [form, setForm] = useState(initial);
   useEffect(()=>{ setForm(initial); }, [initial]);
   const bind = (k) => ({
@@ -5166,7 +6422,7 @@ function ProjectModal({open, initial, onClose, onSave}){
   );
 }
 
-function UserModal({open, onClose, onSave}){
+function _UserModal({open, onClose, onSave}){
   const [form, setForm] = useState({ nombre:'', email:'', telefono:'', password:'', ciudad:'', tipo:'admin', profesion:'' });
   const bind = (k) => ({
     value: form[k] ?? '',
@@ -5234,15 +6490,39 @@ function CreateApuModal({open, onClose, onSave, initial}:{open:boolean; onClose:
       <div className="grid gap-3">
         <label className="text-sm text-slate-300 grid gap-1">
           <span>Descripción</span>
-          <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} />
+          <input className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={form.descripcion} onChange={e=>setForm({...form, descripcion:e.target.value})} />
         </label>
         <label className="text-sm text-slate-300 grid gap-1">
           <span>Unidad</span>
-          <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={form.unidadSalida} onChange={e=>setForm({...form, unidadSalida:e.target.value})} />
+          {(()=>{
+            const commonUnits: string[] = ['m', 'm2', 'm3', 'kg', 'u', 'jornal', 'hora', 'día', 'ml', 'cm', 'mm'];
+            const units: string[] = Array.from(new Set([form.unidadSalida, ...commonUnits].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+            const listId = `create-apu-units`;
+            return (
+              <>
+                <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={form.unidadSalida} onChange={e=>setForm({...form, unidadSalida:e.target.value})} />
+                <datalist id={listId}>
+                  {units.map((u:string)=> (<option key={u} value={u} />))}
+                </datalist>
+              </>
+            );
+          })()}
         </label>
         <label className="text-sm text-slate-300 grid gap-1">
           <span>Categoría</span>
-          <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={form.categoria||''} onChange={e=>setForm({...form, categoria:e.target.value})} />
+          {(()=>{
+            const commonCats: string[] = ['Obra gruesa','Terminaciones','Techumbre','Instalaciones sanitarias','Instalaciones eléctricas','Fachada','Servicios'];
+            const cats: string[] = Array.from(new Set([form.categoria||'', ...commonCats].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+            const listId = `create-apu-cats`;
+            return (
+              <>
+                <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={form.categoria||''} onChange={e=>setForm({...form, categoria:e.target.value})} />
+                <datalist id={listId}>
+                  {cats.map((c:string)=> (<option key={c} value={c} />))}
+                </datalist>
+              </>
+            );
+          })()}
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Cerrar</button>
@@ -5264,7 +6544,7 @@ function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolea
     // Si no hay secciones, cae en "materiales"
     const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const apu:any = { descripcion: desc || 'APU sin título', unidadSalida: unit || 'm2', categoria: category || '', secciones: { materiales: [], equipos: [], manoObra: [], varios: [], extras: [] } };
-    let current: 'materiales'|'equipos'|'manoObra'|'varios' = 'materiales';
+    
 
     // Nuevo: detección de intención por prompt corto ("1 m3 hormigón", "radier 10 cm", "excavación", etc.)
     const hasStructuredMarkers = (txt:string) => /[|;\t]|@|\$\s*\d/.test(txt);
@@ -5277,7 +6557,7 @@ function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolea
     const tryBuildFromIntent = (t:string) => {
       if(!t || hasStructuredMarkers(raw)) return null;
       const n = t.normalize('NFD').replace(/\p{Diacritic}/gu,'');
-      const incl = (w:string) => n.includes(w);
+  const _incl = (w:string) => n.includes(w);
       const hasAny = (...ws:string[]) => ws.some(w => n.includes(w));
       // Selección por palabras clave (sin acentos)
       // Hormigón / H-25 / radier / pavimento
@@ -5381,14 +6661,15 @@ function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolea
       }
       return null;
     };
+    let _current: 'materiales'|'equipos'|'manoObra'|'varios' = 'materiales';
     for(const line of lines){
       const secMatch = line.toLowerCase().match(/^(material(es)?|equipo(s)?|mano\s*obra|varios)\s*[:：-]/i);
       if(secMatch){
         const tag = secMatch[1].toLowerCase();
-        if(tag.startsWith('mater')) current = 'materiales';
-        else if(tag.startsWith('equipo')) current = 'equipos';
-        else if(tag.startsWith('mano')) current = 'manoObra';
-        else current = 'varios';
+        if(tag.startsWith('mater')) _current = 'materiales';
+        else if(tag.startsWith('equipo')) _current = 'equipos';
+        else if(tag.startsWith('mano')) _current = 'manoObra';
+        else _current = 'varios';
         continue;
       }
       const parts = line.split(/\s*\|\s*|\t|;|,/); // soporta "|", tab, ";" o ","
@@ -5446,15 +6727,39 @@ function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolea
         <div className="grid md:grid-cols-3 gap-3">
           <label className="text-sm text-slate-300 grid gap-1">
             <span>Descripción APU</span>
-            <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={desc} onChange={e=>setDesc(e.target.value)} />
+            <input className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={desc} onChange={e=>setDesc(e.target.value)} />
           </label>
           <label className="text-sm text-slate-300 grid gap-1">
             <span>Unidad salida</span>
-            <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={unit} onChange={e=>setUnit(e.target.value)} />
+            {(()=>{
+              const commonUnits: string[] = ['m', 'm2', 'm3', 'kg', 'u', 'jornal', 'hora', 'día', 'ml', 'cm', 'mm'];
+              const units: string[] = Array.from(new Set([unit, ...commonUnits].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+              const listId = 'assist-apu-units';
+              return (
+                <>
+                  <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={unit} onChange={e=>setUnit(e.target.value)} />
+                  <datalist id={listId}>
+                    {units.map((u:string)=> (<option key={u} value={u} />))}
+                  </datalist>
+                </>
+              );
+            })()}
           </label>
           <label className="text-sm text-slate-300 grid gap-1">
             <span>Categoría</span>
-            <input className="bg-slate-800 border border-slate-700 rounded-xl p-2" value={category} onChange={e=>setCategory(e.target.value)} />
+            {(()=>{
+              const commonCats: string[] = ['Obra gruesa','Terminaciones','Techumbre','Instalaciones sanitarias','Instalaciones eléctricas','Fachada','Servicios'];
+              const cats: string[] = Array.from(new Set([category, ...commonCats].map(s=>String(s||'').trim()).filter(Boolean))).sort();
+              const listId = 'assist-apu-cats';
+              return (
+                <>
+                  <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={category} onChange={e=>setCategory(e.target.value)} />
+                  <datalist id={listId}>
+                    {cats.map((c:string)=> (<option key={c} value={c} />))}
+                  </datalist>
+                </>
+              );
+            })()}
           </label>
         </div>
         <label className="text-sm text-slate-300 grid gap-1">

@@ -23,7 +23,7 @@ type Props = {
   onDeleteSubChapter?: (chapterId: string, subId: string) => void;
 };
 
-export default function BudgetTable({ chapters, rows, getApuById, unitCost, resources, fmt, onPickApu, onAddSubRow, onUpdateSubRow, onRemoveSubRow, onMoveChapter, onDelete, onDuplicate, onUpdateRow, onShowApuDetail, onAddSubChapter, onRenameSubChapter, onDeleteSubChapter }: Props) {
+export default function BudgetTable({ chapters, rows, getApuById, unitCost, resources, fmt, onPickApu, onAddSubRow, onUpdateSubRow, onRemoveSubRow, onMoveChapter, onDelete, onDuplicate, onUpdateRow, onShowApuDetail, onAddSubChapter /* onRenameSubChapter, onDeleteSubChapter (no usados) */ }: Props) {
   const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({});
   const toggle = (id: string) => setCollapsed(s => ({ ...s, [id]: !s[id] }));
   const calcRowTotal = (r: any) => {
