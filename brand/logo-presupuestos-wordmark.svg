@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="720" height="200" viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Presupuestos - Wordmark">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e6e0d6"/>
+      <stop offset="100%" stop-color="#b2a99e"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(24,150)" fill="#e6e0d6">
+    <text x="0" y="0" font-family="'Inter', system-ui, sans-serif" font-weight="900" font-size="84" letter-spacing="2">PRESUPUESTOS</text>
+    <text x="10" y="28" font-family="'Inter', system-ui, sans-serif" font-weight="700" font-size="20" letter-spacing="8" opacity=".9">PARA LA CONSTRUCCIÓN</text>
+  </g>
+</svg>
