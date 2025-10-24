@@ -4795,7 +4795,72 @@ const App: React.FC = () => {
                 const url = URL.createObjectURL(blob);
                 const aEl = document.createElement('a'); aEl.href = url; aEl.download = 'presupuesto.csv'; aEl.click(); URL.revokeObjectURL(url);
               }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📊 Exportar CSV</button>
-              <button onClick={()=>{ window.print(); }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
+              <button onClick={()=>{
+                try {
+                  const fmtCl = (n:number)=> new Intl.NumberFormat('es-CL', { style:'currency', currency:'CLP', maximumFractionDigits:0 }).format(n||0);
+                  // Calcular PU de una subpartida
+                  const calcSubPu = (s:any)=>{
+                    const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                    const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                    const ov = (typeof s?.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : undefined;
+                    return (ov ?? base) || 0;
+                  };
+                  // Agrupar por capítulo en el orden actual
+                  const chMap: Record<string, any[]> = {};
+                  chapters.forEach(ch=> chMap[ch.id] = []);
+                  rows.forEach(r=>{ const id = r.chapterId || (chapters[0]?.id||''); if(!chMap[id]) chMap[id]=[]; chMap[id].push(r); });
+
+                  const w = window.open('', '_blank');
+                  if (!w) return;
+                  const styles = `
+                    *{ box-sizing: border-box; }
+                    @page{ margin:12mm; }
+                    body{ font-family: Arial, Helvetica, sans-serif; color:#111; }
+                    h1{ text-align:center; margin: 0 0 12px; font-size:18px; }
+                    table{ border-collapse: collapse; width:100%; }
+                    .outer{ border:2px solid #111; }
+                    th, td{ border:1px solid #333; padding:6px 8px; font-size:12px; }
+                    thead th{ background:#e5e7eb; font-weight:700; text-align:center; }
+                    .col-item{ width:60px; text-align:center; }
+                    .col-un{ width:80px; text-align:center; }
+                    .col-pu{ width:120px; text-align:right; }
+                    .section{ font-weight:700; background:#f3f4f6; }
+                    .right{ text-align:right; }
+                    .center{ text-align:center; }
+                  `;
+                  let html = `<!doctype html><html><head><meta charset='utf-8'/><title>Imprimir Presupuesto</title><style>${styles}</style></head><body>`;
+                  html += `<h1>Subcontrato Mano de Obra</h1>`;
+                  html += `<table class='outer'><thead><tr><th class='col-item'>Ítem</th><th>Partida</th><th class='col-un'>Unidad</th><th class='col-pu'>PU ($)</th></tr></thead><tbody>`;
+                  chapters.forEach((ch, ci)=>{
+                    const list = chMap[ch.id]||[];
+                    if (!list.length) return;
+                    // Título de capítulo como fila de sección
+                    html += `<tr class='section'><td class='center'>${ci+1}</td><td>${ch.title}</td><td></td><td></td></tr>`;
+                    list.forEach((r, ri)=>{
+                      const idx = `${ci+1}.${ri+1}`;
+                      const subs: any[] = Array.isArray(r.subRows)? r.subRows : [];
+                      if (!subs.length) {
+                        html += `<tr><td class='center'>${idx}</td><td>${(r.descripcion||'Partida')}</td><td></td><td></td></tr>`;
+                      } else {
+                        // Fila de cabecera de la partida (sin PU)
+                        html += `<tr><td class='center'>${idx}</td><td>${(r.descripcion||'Partida')}</td><td></td><td></td></tr>`;
+                        subs.forEach((s, si)=>{
+                          const sIdx = `${ci+1}.${ri+1}.${si+1}`;
+                          const un = (s.unidadSalida || (Array.isArray(s.apuIds) && s.apuIds[0] ? (getApuById(s.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                          const pu = calcSubPu(s);
+                          html += `<tr><td class='center'>${sIdx}</td><td>${(s.descripcion||'Subpartida')}</td><td class='center'>${un}</td><td class='right'>${pu? fmtCl(pu): ''}</td></tr>`;
+                        });
+                      }
+                    });
+                  });
+                  html += `</tbody></table>`;
+                  html += `</body></html>`;
+                  w.document.open();
+                  w.document.write(html);
+                  w.document.close();
+                  setTimeout(()=>{ try{ w.focus(); w.print(); }catch{} }, 50);
+                } catch {}
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
               <button onClick={()=>{
                 // Inicia flujo de nuevo presupuesto: modal de proyecto vacío y forzar 'create'
                 setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' });
