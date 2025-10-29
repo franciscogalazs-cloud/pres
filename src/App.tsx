@@ -4,10 +4,10 @@ import { apus as defaultApus } from './data/defaults';
 import Calculator from './components/Calculator';
 import { useNotifications } from './hooks/useNotifications';
 import { uid, fmt, normUnit } from './utils/formatters';
-import { readAliasMap, writeAliasMap, similarityScore, groupSimilarApus } from './utils/match';
+import { readAliasMap, writeAliasMap, similarityScore, groupSimilarApus, isApuIncomplete } from './utils/match';
 import { applySynonyms } from './data/synonyms';
 import ApuCleanupModal from './components/ui/ApuCleanupModal';
-import { unitCost } from './utils/calculations';
+import { unitCost, unitCostBySection } from './utils/calculations';
 import { useResources } from './hooks/useResources';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { ProjectInfoModal } from './components/ui/ProjectInfoModal';
@@ -41,6 +41,20 @@ const App: React.FC = () => {
   const [gg, setGG] = useLocalStorage<number>('apu-gg', 0.18);
   const [util, setUtil] = useLocalStorage<number>('apu-util', 0.20);
   const [iva, setIva] = useLocalStorage<number>('apu-iva', 0.19);
+  // Notas del presupuesto (persistidas)
+  const [budgetNotes, setBudgetNotes] = useLocalStorage<string>('apu-budget-notes', '');
+  // Vista previa de impresión
+  const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+  const [printPreviewHtml, setPrintPreviewHtml] = useState<string>('');
+  const previewIframeRef = useRef<HTMLIFrameElement|null>(null);
+  useEffect(()=>{
+    try{
+      if(printPreviewOpen && previewIframeRef.current){
+        const doc = (previewIframeRef.current as any).contentDocument || (previewIframeRef.current as any).contentWindow?.document;
+        if(doc){ doc.open(); doc.write(printPreviewHtml||''); doc.close(); }
+      }
+    }catch{}
+  }, [printPreviewOpen, printPreviewHtml]);
 
   // Crear preset "fosa" a nivel de App (para no depender del montaje de Calculadora)
   const ensureFosaSnapshot = React.useCallback(() => {
@@ -3187,6 +3201,7 @@ const App: React.FC = () => {
   const [libScope] = useState<'all'|'mine'>('all');
   const [libSearch, setLibSearch] = useState('');
   const [libCategory, setLibCategory] = useState<string>('all');
+  const [libHideIncomplete, setLibHideIncomplete] = useLocalStorage<boolean>('lib-hide-incomplete', false);
   const [showCreateApu, setShowCreateApu] = useState(false);
   const [showApuAssistant, setShowApuAssistant] = useState(false);
   const [showEditApu, setShowEditApu] = useState(false);
@@ -3196,10 +3211,60 @@ const App: React.FC = () => {
   const [expandedForm, setExpandedForm] = useState<any|null>(null);
   // Consideramos "míos" solo los creados por el usuario (id inicia con custom_)
   const isMineById = (id:string)=> String(id||'').startsWith('custom_');
+  const getApuByExactId = React.useCallback((id:string)=>{
+    const apuCustom = (allApus || []).find(a => String(a?.id||'') === String(id||''));
+    if (apuCustom) return apuCustom;
+    const apuDefault = (defaultApus || []).find((a:any) => String(a?.id||'') === String(id||''));
+    if (apuDefault) return apuDefault;
+    throw new Error('APU no encontrado');
+  }, [allApus]);
   const toggleExpandRow = (id:string)=>{
     if(expandedId === id){ setExpandedId(null); setExpandedForm(null); return; }
-    const apu = getApuById(id);
-    const sec0 = (apu as any).secciones || { materiales:[{descripcion:'',unidad:'',cantidad:0,pu:0}], equipos:[{descripcion:'',unidad:'',cantidad:0,pu:0}], manoObra:[{descripcion:'',unidad:'',cantidad:0,pu:0}], varios:[{descripcion:'',unidad:'',cantidad:0,pu:0}], __meta: {} };
+    const apu = getApuByExactId(id);
+    // Derivar secciones desde items si no existen, para que el P. Unitario coincida y la edición sea coherente
+    const deriveFromItems = () => {
+      const base:any = { materiales:[], equipos:[], manoObra:[], varios:[], extras:[], __meta:{} };
+      const items:any[] = Array.isArray((apu as any).items)? (apu as any).items : [];
+      for(const it of items){
+        if(it?.tipo === 'coef' || it?.tipo === 'rendimiento'){
+          const r = (resources as any)[it.resourceId];
+          if(!r) continue;
+          const isCoef = it.tipo === 'coef';
+          const cantidad = isCoef ? (Number(it.coef||0) * (1 + Number(it.merma||0))) : (1 / Math.max(1, Number(it.rendimiento||1)));
+          const pu = Number(r.precio||0);
+          const row = { descripcion: r.nombre, unidad: r.unidad, cantidad, pu };
+          switch(r.tipo){
+            case 'material': base.materiales.push(row); break;
+            case 'equipo': base.equipos.push(row); break;
+            case 'mano_obra': base.manoObra.push(row); break;
+            default: base.varios.push(row); break;
+          }
+          continue;
+        }
+        if(it?.tipo === 'subapu'){
+          try{
+            const subId = String(it.apuRefId||'');
+            const sub = getApuById(subId);
+            const uc = unitCost(sub, resources).unit || 0;
+            const coef = it.coef ?? (it.rendimiento ? 1 / (Number(it.rendimiento)||1) : 1);
+            const row = { descripcion: `SubAPU ${subId}`, unidad: 'u', cantidad: coef, pu: uc };
+            base.varios.push(row);
+          }catch{}
+          continue;
+        }
+      }
+      // Asegurar al menos 1 fila vacía en cada sección
+      const ensureOne = (arr:any[]) => (arr && arr.length > 0 ? arr : [{ descripcion:'', unidad:'', cantidad:0, pu:0 }]);
+      return {
+        materiales: ensureOne(base.materiales),
+        equipos: ensureOne(base.equipos),
+        manoObra: ensureOne(base.manoObra),
+        varios: ensureOne(base.varios),
+        extras: Array.isArray(base.extras)? base.extras : [],
+        __meta: base.__meta,
+      };
+    };
+    const sec0 = (apu as any).secciones || deriveFromItems();
     const form = {
       descripcion: apu.descripcion || '',
       unidadSalida: apu.unidadSalida || '',
@@ -3295,7 +3360,7 @@ const App: React.FC = () => {
     // Permitir editar cualquier APU que esté en la biblioteca actual
     const exists = allApus.find(a=>a.id===expandedId);
     if(exists){
-  const next = allApus.map(x=> x.id===expandedId? { ...x, descripcion: expandedForm.descripcion, unidadSalida: expandedForm.unidadSalida, categoria: expandedForm.categoria || '', secciones: expandedForm.secciones } : x);
+  const next = allApus.map(x=> x.id===expandedId? { ...x, descripcion: expandedForm.descripcion, unidadSalida: expandedForm.unidadSalida, categoria: expandedForm.categoria || '', secciones: expandedForm.secciones, items: undefined } : x);
       saveLibrary(next);
       showNotification('APU actualizado','success');
     } else {
@@ -3378,7 +3443,7 @@ const App: React.FC = () => {
     }
     return refs;
   };
-  const handleDeleteApu = (id:string)=>{
+  const handleDeleteApu = (id:string, opts?: { skipConfirm?: boolean; silent?: boolean })=>{
     // Impedir borrar si el APU está en uso en el presupuesto activo
     const refs = findApuUsages(id);
     if (refs.length > 0) {
@@ -3397,11 +3462,13 @@ const App: React.FC = () => {
       return;
     }
     // Confirmar borrado si no está en uso
-    if(!confirm('¿Eliminar este APU de la biblioteca?')) return;
+    if(!opts?.skipConfirm){
+      if(!confirm('¿Eliminar este APU de la biblioteca?')) return;
+    }
     const next = (allApus||[]).filter(x=>x.id!==id);
     saveLibrary(next);
     // Notificación opcional (silenciosa en modo actual)
-    showNotification('APU eliminado','info');
+    if(!opts?.silent){ showNotification('APU eliminado','info'); }
   };
   // (Eliminado) Estados de edición inline de presupuesto no utilizados actualmente
 
@@ -3482,6 +3549,111 @@ const App: React.FC = () => {
     const saved = (loadBudget()||[]);
     return saved.length? saved : [];
   });
+
+  // Migración: mover APUs asignados en partida (nivel padre) a una subpartida única
+  const apuToSubMigrationRun = useRef(false);
+  useEffect(()=>{
+    if(apuToSubMigrationRun.current) return;
+    apuToSubMigrationRun.current = true;
+    try{
+      let changed = false; let migratedCount = 0;
+      const next = rows.map((r:any)=>{
+        const parentIds: string[] = (Array.isArray(r?.apuIds) && r.apuIds.length)
+          ? (r.apuIds as string[])
+          : (r?.apuId ? [String(r.apuId)] : []);
+        const subs: any[] = Array.isArray(r?.subRows) ? (r.subRows as any[]) : [];
+        if(parentIds.length > 0 && subs.length === 0){
+          let unitFromApu = '';
+          try{ unitFromApu = getApuById(parentIds[0])?.unidadSalida || ''; }catch{}
+          const sub = {
+            id: uid(),
+            descripcion: (r.descripcion || 'Subpartida') as string,
+            unidadSalida: (r.unidadSalida || unitFromApu || '') as string,
+            metrados: (Number(r.metrados||0) || 1) as number,
+            apuIds: Array.from(new Set(parentIds)) as string[],
+            overrideUnitPrice: (typeof (r as any)?.overrideUnitPrice === 'number' && Number.isFinite((r as any)?.overrideUnitPrice)) ? (r as any)?.overrideUnitPrice : undefined,
+            overrideTotal: (typeof (r as any)?.overrideTotal === 'number' && Number.isFinite((r as any)?.overrideTotal)) ? (r as any)?.overrideTotal : undefined,
+            _migrated: true,
+          } as any;
+          changed = true;
+          migratedCount++;
+          return { ...r, apuIds: [], apuId: null as any, subRows: [sub] };
+        }
+        return r;
+      });
+      if(changed){ setRows(next); saveBudget(next); try{ showNotification(`${migratedCount} partida(s) convertidas a subpartidas`, 'info'); }catch{} }
+    }catch{ /* noop */ }
+  }, [rows, saveBudget, getApuById, showNotification]);
+
+  // Modal: Ver usos y reemplazo masivo de APU
+  const [usageModal, setUsageModal] = useState<{ open: boolean; apuId: string | null; usages: Array<{ rowId: string; subId?: string; label: string }>; targetId: string }>(
+    { open: false, apuId: null, usages: [], targetId: '' }
+  );
+  const openUsageModal = (apuId: string) => {
+    try{
+      const usages = findApuUsages(apuId);
+      setUsageModal({ open: true, apuId, usages, targetId: '' });
+    }catch{}
+  };
+  const closeUsageModal = ()=> setUsageModal({ open:false, apuId:null, usages:[], targetId:'' });
+
+  const replaceApuEverywhere = (oldId: string, newId: string) => {
+    try{
+      const oldK = String(oldId||'');
+      const newK = String(newId||'');
+      if(!oldK || !newK){ showNotification('Selecciona un APU de reemplazo','info'); return; }
+      if(oldK === newK){ showNotification('El APU de reemplazo debe ser distinto','info'); return; }
+      let replaced = 0; let changedAny = false;
+      const next = rows.map((r:any)=>{
+        let changed = false;
+        // principal
+        const baseIds: string[] = (r?.apuIds && r.apuIds.length) ? [...(r.apuIds as string[])] : (r?.apuId ? [String(r.apuId)] : []);
+        let rIds = baseIds;
+        if(rIds.includes(oldK)){
+          replaced += rIds.filter(id=> id===oldK).length;
+          rIds = Array.from(new Set(rIds.map(id=> id===oldK? newK : id)));
+          changed = true;
+        }
+        // subfilas
+        let sChangedAgg = false;
+        const subs = Array.isArray(r?.subRows)? (r.subRows as any[]) : [];
+        const newSubs = subs.map((s:any)=>{
+          let sChanged = false;
+          let sIds: string[] = Array.isArray(s?.apuIds)? [...s.apuIds] : [];
+          if(sIds.includes(oldK)){
+            replaced += sIds.filter(id=> id===oldK).length;
+            sIds = Array.from(new Set(sIds.map(id=> id===oldK? newK : id)));
+            sChanged = true; sChangedAgg = true;
+          }
+          return sChanged? { ...s, apuIds: sIds } : s;
+        });
+        if(changed || sChangedAgg){ changedAny = true; return { ...r, apuIds: rIds, apuId: null as any, subRows: newSubs }; }
+        return r;
+      });
+      if(changedAny){ setRows(next); saveBudget(next); showNotification(`Reemplazo aplicado en ${replaced} uso(s)`, 'success'); }
+      else { showNotification('No se encontraron usos para reemplazar','info'); }
+      closeUsageModal();
+    }catch{ showNotification('No se pudo aplicar el reemplazo','error'); }
+  };
+
+  // Conteo de usos de APU en presupuesto (partidas y subpartidas)
+  const apuUsageCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    try{
+      for (const r of rows as any[]) {
+        const rIds: string[] = (r?.apuIds && r.apuIds.length)
+          ? (r.apuIds as string[])
+          : (r?.apuId ? [String(r.apuId)] : []);
+        rIds.forEach(id => map.set(id, (map.get(id) || 0) + 1));
+        const subs = Array.isArray(r?.subRows) ? r.subRows : [];
+        for (const s of subs) {
+          const sIds: string[] = Array.isArray(s?.apuIds) ? (s.apuIds as string[]) : [];
+          sIds.forEach(id => map.set(id, (map.get(id) || 0) + 1));
+        }
+      }
+    }catch{}
+    return Object.fromEntries(map.entries()) as Record<string, number>;
+  }, [rows]);
 
   // (removido) Seed de ejemplo: ya no se crean capítulos/partidas por defecto al cargar.
   const addRow = ()=>{
@@ -4199,8 +4371,51 @@ const App: React.FC = () => {
 
   // ===== Limpieza de biblioteca: duplicados e incompletos =====
   const [cleanupOpen, setCleanupOpen] = useState(false);
-  const handleMergeApus = (targetId: string, dupIds: string[], removeDup: boolean) => {
+  const [hasBackup, setHasBackup] = useState<boolean>(()=>{
+    try{ return !!localStorage.getItem('apu-library-backup'); }catch{ return false; }
+  });
+  const backupApusAndAliases = React.useCallback(()=>{
     try{
+      // Evitar sobrescribir si ya existe un backup vigente
+      if(!localStorage.getItem('apu-library-backup')){
+        localStorage.setItem('apu-library-backup', JSON.stringify({ at: Date.now(), apus: allApus||[] }));
+      }
+      if(!localStorage.getItem('apu-alias-backup')){
+        const aliases = readAliasMap();
+        localStorage.setItem('apu-alias-backup', JSON.stringify({ at: Date.now(), aliases }));
+      }
+      setHasBackup(true);
+    }catch{ /* noop */ }
+  }, [allApus]);
+  const restoreBackup = React.useCallback(()=>{
+    try{
+      const libRaw = localStorage.getItem('apu-library-backup');
+      const aliasRaw = localStorage.getItem('apu-alias-backup');
+      if(!libRaw && !aliasRaw){ showNotification('No hay copia para deshacer','info'); return; }
+      if(libRaw){
+        try{
+          const parsed = JSON.parse(libRaw||'null')||{};
+          const apus = parsed.apus;
+          if(Array.isArray(apus)){ saveLibrary(apus); }
+        }catch{}
+        try{ localStorage.removeItem('apu-library-backup'); }catch{}
+      }
+      if(aliasRaw){
+        try{
+          const parsedA = JSON.parse(aliasRaw||'null')||{};
+          const aliases = parsedA.aliases;
+          if(aliases && typeof aliases==='object'){ writeAliasMap(aliases); }
+        }catch{}
+        try{ localStorage.removeItem('apu-alias-backup'); }catch{}
+      }
+      setHasBackup(false);
+      showNotification('Se restauró la biblioteca y alias previos','success');
+    }catch{ showNotification('No se pudo restaurar el respaldo','error'); }
+  }, [saveLibrary, showNotification]);
+  const handleMergeApus = React.useCallback((targetId: string, dupIds: string[], removeDup: boolean) => {
+    try{
+      // Respaldo previo la primera vez
+      backupApusAndAliases();
       const aliases = readAliasMap();
       const nextAliases = { ...(aliases||{}) } as Record<string,string>;
       for(const d of dupIds){ nextAliases[d] = targetId; }
@@ -4213,7 +4428,117 @@ const App: React.FC = () => {
       }
       showNotification('Fusión de APUs completada','success');
     }catch{ showNotification('No se pudo completar la fusión','error'); }
-  };
+  }, [allApus, saveLibrary, showNotification, backupApusAndAliases]);
+
+  // Limpieza automática: detectar grupos similares y fusionar manteniendo el mejor
+  const autoCleanupApus = React.useCallback(() => {
+    try{
+      const list = Array.isArray(customApus) ? customApus : [];
+      if(list.length < 2){ showNotification('No hay suficientes APUs para analizar','info'); return; }
+      // Conteo de usos para preferir APUs más referenciados
+      const usage = new Map<string, number>();
+      const addUse = (id?:string) => { if(!id) return; usage.set(id, (usage.get(id)||0)+1); };
+      rows.forEach(r=>{
+        const ids:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+        ids.forEach(addUse);
+        (r.subRows||[]).forEach((s:any)=> (Array.isArray(s?.apuIds)? s.apuIds: []).forEach(addUse));
+      });
+      // Detectar grupos por similitud (misma unidad)
+      const groups = groupSimilarApus(list, { threshold: 0.46, sameUnit: true });
+      if(!groups.length){ showNotification('No se detectaron duplicados','info'); return; }
+      let mergedGroups = 0; let removed = 0;
+      groups.forEach(g=>{
+        const members = g.ids.map(id => list.find(a=>a.id===id)).filter(Boolean) as any[];
+        if(members.length < 2) return;
+        // Scoring: preferido si está usado, está completo, y tiene más filas en secciones
+        const score = (a:any) => {
+          const use = usage.get(a.id)||0;
+          const complete = isApuIncomplete(a) ? 0 : 1;
+          const sec = (()=>{ try{ const s=a.secciones||{}; return ['materiales','equipos','manoObra','varios'].reduce((n,k)=> n + (Array.isArray(s[k])? s[k].length:0), 0); }catch{return 0;} })();
+          return use*3 + complete*2 + sec*0.1; // pesos simples
+        };
+        let target = members[0]; let best = score(target);
+        for(const m of members.slice(1)){
+          const sc = score(m); if(sc > best){ best = sc; target = m; }
+        }
+        const dupIds = g.ids.filter(id => id !== target.id);
+        if(dupIds.length){ mergedGroups++; removed += dupIds.length; handleMergeApus(target.id, dupIds, true); }
+      });
+      showNotification(`Depuración completada: ${mergedGroups} grupos fusionados, ${removed} duplicados eliminados`, 'success');
+    }catch{ showNotification('Error en la depuración automática', 'error'); }
+  }, [customApus, rows, handleMergeApus, showNotification]);
+
+  // Migrar toda la biblioteca a secciones: si hay items y no hay secciones con filas, derivar; si hay secciones, limpiar items
+  const migrateApusToSections = React.useCallback(()=>{
+    try{
+      const list = Array.isArray(allApus)? allApus : [];
+      if(!list.length){ showNotification('Biblioteca vacía','info'); return; }
+      backupApusAndAliases();
+      const accLen = (arr:any)=> Array.isArray(arr)? arr.length: 0;
+      const hasRows = (s:any)=>{
+        try{
+          const known = ['materiales','equipos','manoObra','varios'];
+          if(known.some(k=> accLen(s?.[k])>0)) return true;
+          if(Array.isArray(s?.extras) && s.extras.some((ex:any)=> accLen(ex?.rows)>0)) return true;
+          for(const k of Object.keys(s||{})){
+            if(known.includes(k) || k==='extras' || k==='__meta' || k==='__titles') continue;
+            const v:any = s[k];
+            if(Array.isArray(v) && v.length>0) return true;
+            if(v && Array.isArray(v.rows) && v.rows.length>0) return true;
+          }
+          return false;
+        }catch{return false;}
+      };
+      const deriveFromItems = (apu:any)=>{
+        const base:any = { materiales:[], equipos:[], manoObra:[], varios:[], extras:[], __meta:{} };
+        const items:any[] = Array.isArray(apu?.items)? apu.items : [];
+        for(const it of items){
+          if(it?.tipo === 'coef' || it?.tipo === 'rendimiento'){
+            const r = (resources as any)[it.resourceId];
+            if(!r) continue;
+            const isCoef = it.tipo === 'coef';
+            const cantidad = isCoef ? (Number(it.coef||0) * (1 + Number(it.merma||0))) : (1 / Math.max(1, Number(it.rendimiento||1)));
+            const pu = Number(r.precio||0);
+            const row = { descripcion: r.nombre, unidad: r.unidad, cantidad, pu };
+            switch(r.tipo){
+              case 'material': base.materiales.push(row); break;
+              case 'equipo': base.equipos.push(row); break;
+              case 'mano_obra': base.manoObra.push(row); break;
+              default: base.varios.push(row); break;
+            }
+            continue;
+          }
+          if(it?.tipo === 'subapu'){
+            try{
+              const subId = String(it.apuRefId||'');
+              const sub = getApuByExactId? getApuByExactId(subId) : getApuById(subId);
+              const uc = unitCost(sub, resources).unit || 0;
+              const coef = it.coef ?? (it.rendimiento ? 1 / (Number(it.rendimiento)||1) : 1);
+              const row = { descripcion: `SubAPU ${subId}`, unidad: 'u', cantidad: coef, pu: uc };
+              base.varios.push(row);
+            }catch{}
+            continue;
+          }
+        }
+        return base;
+      };
+      let changed = 0; let derived = 0; let clearedOnly = 0;
+      const next = list.map((apu:any)=>{
+        const s = apu?.secciones || {};
+        const has = hasRows(s);
+        const hasItems = Array.isArray(apu?.items) && apu.items.length>0;
+        if(has && hasItems){ changed++; clearedOnly++; return { ...apu, items: undefined }; }
+        if(!has && hasItems){
+          const derivedSecs = deriveFromItems(apu);
+          changed++; derived++;
+          return { ...apu, secciones: derivedSecs, items: undefined };
+        }
+        return apu;
+      });
+      if(changed>0){ saveLibrary(next); showNotification(`Migración realizada: ${changed} APU(s) actualizados (${derived} derivados desde items, ${clearedOnly} limpiados)`, 'success'); }
+      else { showNotification('No había APUs para migrar','info'); }
+    }catch{ showNotification('Error al migrar APUs','error'); }
+  }, [allApus, resources, backupApusAndAliases, saveLibrary, showNotification, getApuByExactId, getApuById]);
 
   // ===== Utilidades: creación automática de APU por similitud de nombre =====
   const _normTxt = React.useCallback((s:string)=> (s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim(), []);
@@ -4752,6 +5077,31 @@ const App: React.FC = () => {
           }
         }}
       />
+      {/* Modal Vista Previa de Impresión */}
+      {printPreviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={()=> setPrintPreviewOpen(false)} />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[min(1000px,95vw)] h-[min(90vh,900px)] grid grid-rows-[auto,1fr]">
+            <div className="flex items-center justify-between p-3 border-b border-slate-800">
+              <div className="text-sm font-semibold text-slate-100">Vista previa de impresión</div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={()=>{ try{ const iw = previewIframeRef.current?.contentWindow as any; iw?.focus(); iw?.print(); }catch{} }}
+                  className="px-3 py-1 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-white text-xs"
+                >Imprimir</button>
+                <button onClick={()=> setPrintPreviewOpen(false)} className="px-3 py-1 rounded-xl border border-slate-600 text-xs">Cerrar</button>
+              </div>
+            </div>
+            <div className="overflow-hidden">
+              <iframe
+                ref={previewIframeRef}
+                className="w-full h-full bg-white"
+                onLoad={() => { try{ const doc = previewIframeRef.current?.contentDocument || previewIframeRef.current?.contentWindow?.document; if(doc){ doc.open(); doc.write(printPreviewHtml||''); doc.close(); } }catch{} }}
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-6xl mx-auto grid gap-6">
         {/* Modal minimalista de Usuario */}
@@ -4771,94 +5121,374 @@ const App: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             {tab === 'presupuesto' && (
               <>
-              <button onClick={()=>{
-                // Export CSV (simple)
-              const header = ['APU','Descripcion','Unidad','Cantidad','Unitario','Directo'];
-                const body = rows.map(r=>{
-                  const ids: string[] = (r.apuIds && r.apuIds.length) ? r.apuIds : (r.apuId ? [r.apuId] : []);
-                  const uc = ids.reduce((sum:number, id:string)=>{
-                    try{ return sum + unitCost(getApuById(id), resources).unit; }catch{ return sum; }
-                  }, 0);
-                  const dir = uc * (r.metrados||0);
-                  const first = ids[0] ? getApuById(ids[0]) : null;
-                  return [
-                    (first?.id || (r.codigo||'')),
-                    (r.descripcion || first?.descripcion || ''),
-                    (r.unidadSalida || first?.unidadSalida || ''),
-                    r.metrados||0,
-                    uc,
-                    dir
-                  ];
-                });
-                const csv = [header, ...body].map(row=>row.join(';')).join('\n');
-                const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const aEl = document.createElement('a'); aEl.href = url; aEl.download = 'presupuesto.csv'; aEl.click(); URL.revokeObjectURL(url);
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📊 Exportar CSV</button>
-              <button onClick={()=>{
-                try {
-                  const fmtCl = (n:number)=> new Intl.NumberFormat('es-CL', { style:'currency', currency:'CLP', maximumFractionDigits:0 }).format(n||0);
-                  // Calcular PU de una subpartida
+
+              <button onClick={async ()=>{
+                try{
+                  // Utilidades de cálculo (sin formatear, dejamos formato a Excel)
                   const calcSubPu = (s:any)=>{
                     const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
                     const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
                     const ov = (typeof s?.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : undefined;
                     return (ov ?? base) || 0;
                   };
+                  const calcRowPu = (r:any)=>{
+                    const ids:string[] = Array.isArray(r?.apuIds) && r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                    const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                    const ov = (typeof r?.overrideUnitPrice === 'number' && Number.isFinite(r.overrideUnitPrice)) ? r.overrideUnitPrice : undefined;
+                    return (ov ?? base) || 0;
+                  };
+                  // Agrupar por capítulo y ordenar como en UI
+                  const chMap: Record<string, any[]> = {};
+                  chapters.forEach(ch=> chMap[ch.id] = []);
+                  rows.forEach(r=>{ const id = r.chapterId || (chapters[0]?.id||''); if(!chMap[id]) chMap[id]=[]; chMap[id].push(r); });
+                  // Encabezado como en impresión
+                  const projName = (activeProject?.name || projectInfo?.nombreProyecto || 'Proyecto sin título');
+                  const clientName = (activeProject?.client || projectInfo?.propietario || '');
+                  const location = ((activeProject as any)?.location || [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', '));
+                  const contract = ((activeProject as any)?.contract || (projectInfo as any)?.contrato || '');
+
+                  const presData: any[][] = [];
+                  presData.push([ `Presupuesto — ${projName}` ]);
+                  presData.push([ 'Obra:', projName || '', '', 'Cliente:', clientName || '' ]);
+                  presData.push([ 'Dirección:', location || '', '', 'Contrato:', contract || '' ]);
+                  presData.push([]);
+                  presData.push([ 'Código','Descripción','Unidad','Cantidad','P.Unitario','P.Total' ]);
+                  const usedApus: Record<string,{ apu:any, items:Set<string> }> = {};
+                  chapters.forEach((ch, ci)=>{
+                    const list = chMap[ch.id]||[]; if(!list.length) return;
+                    presData.push([ String(ci+1), ch.title, '', null, null, null ]);
+                    list.forEach((r, ri)=>{
+                      const idx = `${ci+1}.${ri+1}`;
+                      const subs: any[] = Array.isArray(r.subRows)? r.subRows : [];
+                      let rowDirectTotal = 0;
+                      let secMO = 0, secMAT = 0, secEQ = 0, secVAR = 0;
+                      if(!subs.length){
+                        // Mostrar como cabecera + subpartida virtual 1 (PARTIDA en MAYÚSCULAS y destacada como sección)
+                        presData.push([ idx, String(r.descripcion||'Partida').toUpperCase(), '', null, null, null ]);
+                        const sIdx = `${ci+1}.${ri+1}.1`;
+                        const un = (r.unidadSalida || (Array.isArray(r.apuIds) && r.apuIds[0] ? (getApuById(r.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                        const qty = Number(r.metrados||0);
+                        const pu = calcRowPu(r);
+                        const tot = (typeof r?.overrideTotal === 'number' && Number.isFinite(r.overrideTotal)) ? r.overrideTotal : (pu * qty);
+                        presData.push([ sIdx, 'Subpartida', un, Number.isFinite(qty)&&qty!==0? qty: null, Number.isFinite(pu)&&pu!==0? pu: null, Number.isFinite(tot)&&tot!==0? tot: null ]);
+                        // Desglose por secciones desde los APUs del nivel partida
+                        const idsList:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                        for(const id of idsList){ try{ const apu = getApuById(id); if(!apu) continue; const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} }
+                        rowDirectTotal = secMO + secMAT + secEQ + secVAR;
+                        // Marcar usos a nivel de subpartida virtual
+                        const idsUsage:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                        idsUsage.forEach(id=>{ try{ const apu = getApuById(id); if(!apu) return; if(!usedApus[id]) usedApus[id] = { apu, items: new Set() }; usedApus[id].items.add(sIdx); }catch{} });
+                      } else {
+                        // Fila cabecera de PARTIDA en MAYÚSCULAS y destacada como sección
+                        presData.push([ idx, String(r.descripcion||'Partida').toUpperCase(), '', null, null, null ]);
+                        subs.forEach((s, si)=>{
+                          const sIdx = `${ci+1}.${ri+1}.${si+1}`;
+                          const un = (s.unidadSalida || (Array.isArray(s.apuIds) && s.apuIds[0] ? (getApuById(s.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                          const qty = Number(s?.metrados||0);
+                          const pu = calcSubPu(s);
+                          const tot = (typeof s?.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : (pu * qty);
+                          presData.push([ sIdx, (s.descripcion||'Subpartida'), un, Number.isFinite(qty)&&qty!==0? qty: null, Number.isFinite(pu)&&pu!==0? pu: null, Number.isFinite(tot)&&tot!==0? tot: null ]);
+                          rowDirectTotal += Number(tot||0);
+                          
+                          const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                          ids.forEach(id=>{ try{ const apu = getApuById(id); if(!apu) return; if(!usedApus[id]) usedApus[id] = { apu, items: new Set() }; usedApus[id].items.add(sIdx); const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} });
+                        });
+                        // Ajustar total directo por suma de secciones para consistencia
+                        rowDirectTotal = secMO + secMAT + secEQ + secVAR;
+                      }
+                      // Subtotales por secciones (solo si mayores a 0)
+                      if(secMO) presData.push([ '', 'Subtotal Mano de Obra', '', null, null, secMO ]);
+                      if(secMAT) presData.push([ '', 'Subtotal Materiales', '', null, null, secMAT ]);
+                      if(secEQ) presData.push([ '', 'Subtotal Equipos', '', null, null, secEQ ]);
+                      if(secVAR) presData.push([ '', 'Subtotal Varios', '', null, null, secVAR ]);
+                      // Fila de costo directo por partida (solo "COSTO DIRECTO" en mayúsculas; resto en minúsculas)
+                      presData.push([ '', `COSTO DIRECTO partida ${String(r.descripcion||'').toLowerCase()}`, '', null, null, rowDirectTotal || null ]);
+                    });
+                  });
+                  // Resumen final (sin IVA para coincidir con el formato del ejemplo)
+                  const ggPct = Number(gg)||0, utilPct = Number(util)||0;
+                  const baseDirecto = Number(sumDirecto)||0;
+                  const ggAmt = baseDirecto * ggPct;
+                  const utilAmt = (baseDirecto + ggAmt) * utilPct;
+                  presData.push([]);
+                  presData.push(['','COSTO DIRECTO','','','', baseDirecto ]);
+                  presData.push(['',`utilidad (${(utilPct*100).toFixed(0)}%)`,'','','', utilAmt ]);
+                  presData.push(['',`gastos generales (${(ggPct*100).toFixed(0)}%)`,'','','', ggAmt ]);
+                  presData.push(['','total neto','','','', baseDirecto + utilAmt + ggAmt ]);
+                  // Notas al final
+                  presData.push([]);
+                  presData.push(['Notas']);
+                  presData.push([String(budgetNotes||'')]);
+
+                  // Helper para etiqueta de APU: solo número (posición en biblioteca)
+                  const getApuLabel = (apuId: string, _apu: any): string => {
+                    try {
+                      const aliases = readAliasMap();
+                      const canon = (aliases && aliases[apuId]) ? aliases[apuId] : apuId;
+                      const raw = localStorage.getItem('apu-library');
+                      if (raw) {
+                        const list = JSON.parse(raw||'null');
+                        if (Array.isArray(list)) {
+                          const idx = list.findIndex((a:any)=> String(a?.id||'')===String(canon));
+                          if (idx>=0) {
+                            const pos = idx+1;
+                            return String(pos);
+                          }
+                        }
+                      }
+                    } catch {}
+                    return '';
+                  };
+                  // Intentar con ExcelJS para aplicar estilos; si falla, fallback a SheetJS simple
+                  let excelDone = false;
+                  try {
+                    const ExcelJS = await import('exceljs');
+                    const { saveAs } = await import('file-saver');
+                    const wb = new (ExcelJS as any).Workbook();
+                    const ws = wb.addWorksheet('Presupuesto');
+                    // Anchos de columnas
+                    ws.columns = [
+                      { header: 'Código', key: 'codigo', width: 6 },
+                      { header: 'Descripción', key: 'desc', width: 60 },
+                      { header: 'Unidad', key: 'un', width: 10 },
+                      { header: 'Cantidad', key: 'qty', width: 12 },
+                      { header: 'P.Unitario', key: 'pu', width: 16 },
+                      { header: 'P.Total', key: 'pt', width: 16 },
+                    ];
+                    const addRow = (vals:any[])=> ws.addRow(vals);
+                    const A = (r:number)=> `A${r}`;
+                    const range = (a:string,b:string)=> `${a}:${b}`;
+                    // Escribir encabezados previos
+                    addRow([`Presupuesto — ${projName}`]);
+                    ws.mergeCells(range(A(1),'F1'));
+                    addRow(['Obra:', projName || '', '', 'Cliente:', clientName || '']);
+                    ws.mergeCells('B2:C2'); ws.mergeCells('E2:F2');
+                    addRow(['Dirección:', location || '', '', 'Contrato:', contract || '']);
+                    ws.mergeCells('B3:C3'); ws.mergeCells('E3:F3');
+                    addRow([]);
+                    const headerRow = addRow(['Código','Descripción','Unidad','Cantidad','P.Unitario','P.Total']);
+                    headerRow.eachCell((c:any)=>{ c.font={bold:true}; c.alignment={vertical:'middle', horizontal:'center'}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE5E7EB'}}; c.border={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}; });
+                    const headerRowNumber = headerRow.number;
+                    // Datos
+                    for(const row of presData.slice(6)){ // saltar hasta después del header existente en presData
+                      const r = addRow(row);
+                      // Estilos por tipo de fila
+                      const desc = String(row?.[1]||'');
+                      const isSection = (row?.[0] && !row?.[2] && !row?.[3] && !row?.[4] && !row?.[5]);
+                      const dl = desc.toLowerCase();
+                      const isSubtotal = dl.startsWith('subtotal ');
+                      const isCostoDir = dl.startsWith('costo directo partida');
+                      if(isSection){ r.font={bold:true}; r.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F4F6'}}; }
+                      if(isSubtotal){ r.getCell(2).font={bold:true}; r.getCell(6).font={bold:true}; r.getCell(6).numFmt='#,##0'; }
+                      if(isCostoDir){ r.font={bold:true}; r.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF6FF'}}; r.getCell(6).numFmt='#,##0'; }
+                      // Bordes básicos a celdas con datos
+                      r.eachCell((c:any)=>{ c.border={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}; if(c.col===4){ c.numFmt='#,##0.00'; } if(c.col===5||c.col===6){ c.numFmt='#,##0'; } if(c.col===4||c.col===5||c.col===6) c.alignment={horizontal:'right'}; });
+                    }
+                    // Resumen final (ya incluido en presData; reforzar estilo en últimas 4 filas)
+                    const last = ws.lastRow?.number||ws.rowCount;
+                    for(let r=last-3; r<=last; r++){
+                      const rr = ws.getRow(r); rr.eachCell((c:any)=>{ c.border={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}; });
+                      rr.getCell(1).value=''; rr.getCell(2).alignment={horizontal:'right'};
+                      if(r===last){ rr.eachCell((c:any)=>{ c.font={bold:true}; }); rr.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF6FF'}}; rr.getCell(6).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF6FF'}}; }
+                    }
+                    // Congelar encabezados y autofiltro
+                    ws.views = [{ state:'frozen', ySplit: headerRowNumber }];
+                    ws.autoFilter = { from: { row: headerRowNumber, column: 1 }, to: { row: headerRowNumber, column: 6 } } as any;
+
+                    // Hoja APUs
+                    const ws2 = wb.addWorksheet('APUs');
+                    ws2.columns = [ { header:'APU', width:20 }, { header:'Descripción', width:50 }, { header:'Unidad', width:10 }, { header:'P. UNIT.', width:16 }, { header:'Usado en', width:20 } ];
+                    const apusHeader = ws2.addRow(['APU','Descripción','Unidad','P. UNIT.','Usado en']); apusHeader.font={bold:true};
+                    Object.entries(usedApus).forEach(([id, rec])=>{
+                      try{
+                        const apu:any = (rec as any).apu;
+                        const unit = (apu?.unidadSalida || '');
+                        const pu = unitCost(apu, resources).unit || 0;
+                        const refs = Array.from((rec as any).items||[]).sort().join(', ');
+                        const label = getApuLabel(id, apu) || id;
+                        const row = ws2.addRow([label, (apu?.descripcion||''), unit, Number.isFinite(pu)&&pu!==0? pu: null, refs]);
+                        row.getCell(4).numFmt = '#,##0';
+                      }catch{}
+                    });
+
+                    const buf = await wb.xlsx.writeBuffer();
+                    const slug = String(projName).toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-_]+/g,'');
+                    (saveAs as any)(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `presupuesto-${slug||'export'}.xlsx`);
+                    excelDone = true;
+                  } catch {}
+
+                  if(!excelDone){
+                    // Fallback: SheetJS sin estilos
+                    const XLSX = await import('xlsx');
+                    const wb = XLSX.utils.book_new();
+                    const wsPres = XLSX.utils.aoa_to_sheet(presData);
+                    wsPres['!merges'] = (wsPres['!merges']||[]).concat([
+                      { s:{ r:0, c:0 }, e:{ r:0, c:5 } },
+                      { s:{ r:1, c:1 }, e:{ r:1, c:2 } },
+                      { s:{ r:1, c:4 }, e:{ r:1, c:5 } },
+                      { s:{ r:2, c:1 }, e:{ r:2, c:2 } },
+                      { s:{ r:2, c:4 }, e:{ r:2, c:5 } },
+                    ]);
+                    const notesContentRow = presData.length - 1;
+                    wsPres['!merges'].push({ s:{ r:notesContentRow, c:0 }, e:{ r:notesContentRow, c:5 } });
+                    wsPres['!cols'] = [ { wch:6 }, { wch:60 }, { wch:10 }, { wch:12 }, { wch:16 }, { wch:16 } ];
+                    const headerRowIndex = presData.findIndex(r => r && r[0] === 'Código' && r[1] === 'Descripción');
+                    const dataStart = headerRowIndex >= 0 ? headerRowIndex + 1 : 0;
+                    for(let R = dataStart; R < presData.length; R++){
+                      const cQty = XLSX.utils.encode_cell({ r:R, c:3 });
+                      const cPU  = XLSX.utils.encode_cell({ r:R, c:4 });
+                      const cTot = XLSX.utils.encode_cell({ r:R, c:5 });
+                      const q = (wsPres as any)[cQty]; if(q && typeof q.v === 'number'){ q.t='n'; q.z = '#,##0.00'; }
+                      const pu = (wsPres as any)[cPU]; if(pu && typeof pu.v === 'number'){ pu.t='n'; pu.z = '#,##0'; }
+                      const t = (wsPres as any)[cTot]; if(t && typeof t.v === 'number'){ t.t='n'; t.z = '#,##0'; }
+                    }
+                    XLSX.utils.book_append_sheet(wb, wsPres, 'Presupuesto');
+                    const apusData: any[][] = [[ 'APU','Descripción','Unidad','P. UNIT.','Usado en' ]];
+                    Object.entries(usedApus).forEach(([id, rec])=>{
+                      try{
+                        const apu:any = (rec as any).apu;
+                        const unit = (apu?.unidadSalida || '');
+                        const pu = unitCost(apu, resources).unit || 0;
+                        const refs = Array.from((rec as any).items||[]).sort().join(', ');
+                        const label = getApuLabel(id, apu);
+                        apusData.push([ label || id, (apu?.descripcion||''), unit, Number.isFinite(pu)&&pu!==0? pu: null, refs ]);
+                      }catch{}
+                    });
+                    const wsApus = XLSX.utils.aoa_to_sheet(apusData);
+                    wsApus['!cols'] = [ {wch:20}, {wch:50}, {wch:10}, {wch:16}, {wch:20} ];
+                    for(let R = 1; R < apusData.length; R++){
+                      const cPU = XLSX.utils.encode_cell({ r:R, c:3 });
+                      const pu = (wsApus as any)[cPU]; if(pu && typeof pu.v === 'number'){ pu.t='n'; pu.z = '#,##0'; }
+                    }
+                    XLSX.utils.book_append_sheet(wb, wsApus, 'APUs');
+                    const slug = String(projName).toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-_]+/g,'');
+                    XLSX.writeFile(wb, `presupuesto-${slug||'export'}.xlsx`);
+                  }
+                }catch{ /* noop */ }
+              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📥 Exportar Excel</button>
+              <button onClick={()=>{
+                try {
+                  const fmtCl = (n:number)=> new Intl.NumberFormat('es-CL', { style:'currency', currency:'CLP', maximumFractionDigits:0 }).format(n||0);
+                  const fmtQty = (n:number)=> new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(Number.isFinite(n)? n: 0);
+                  const esc = (s: any)=> String(s ?? '').replace(/[&<>"']/g, (c)=> ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' } as any)[c]);
+                  const calcSubPu = (s:any)=>{
+                    const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                    const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                    const ov = (typeof s?.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : undefined;
+                    return (ov ?? base) || 0;
+                  };
+                  const calcRowPu = (r:any)=>{
+                    const ids:string[] = Array.isArray(r?.apuIds) && r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                    const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                    const ov = (typeof r?.overrideUnitPrice === 'number' && Number.isFinite(r.overrideUnitPrice)) ? r.overrideUnitPrice : undefined;
+                    return (ov ?? base) || 0;
+                  };
                   // Agrupar por capítulo en el orden actual
                   const chMap: Record<string, any[]> = {};
                   chapters.forEach(ch=> chMap[ch.id] = []);
                   rows.forEach(r=>{ const id = r.chapterId || (chapters[0]?.id||''); if(!chMap[id]) chMap[id]=[]; chMap[id].push(r); });
-
-                  const w = window.open('', '_blank');
-                  if (!w) return;
                   const styles = `
                     *{ box-sizing: border-box; }
-                    @page{ margin:12mm; }
+                    @page{ size:A4; margin:10mm 10mm 12mm 10mm; }
                     body{ font-family: Arial, Helvetica, sans-serif; color:#111; }
                     h1{ text-align:center; margin: 0 0 12px; font-size:18px; }
+                    .meta{ display:flex; justify-content:space-between; align-items:flex-start; margin: 0 0 10px; font-size:12px; }
+                    .meta div{ line-height:1.2; }
                     table{ border-collapse: collapse; width:100%; }
                     .outer{ border:2px solid #111; }
                     th, td{ border:1px solid #333; padding:6px 8px; font-size:12px; }
                     thead th{ background:#e5e7eb; font-weight:700; text-align:center; }
+                    tfoot td{ background:#eef2ff; font-weight:700; }
                     .col-item{ width:60px; text-align:center; }
                     .col-un{ width:80px; text-align:center; }
+                    .col-cant{ width:90px; text-align:right; }
                     .col-pu{ width:120px; text-align:right; }
+                    .col-total{ width:120px; text-align:right; }
                     .section{ font-weight:700; background:#f3f4f6; }
                     .right{ text-align:right; }
                     .center{ text-align:center; }
+                    .notes{ border:1px solid #333; padding:8px; margin-top:12px; min-height:90px; }
+                    .notes-title{ font-weight:700; margin-bottom:6px; }
+                    .summary{ margin-top:12px; width:100%; display:flex; justify-content:flex-end; }
+                    .summary table{ border-collapse:collapse; min-width:360px; }
+                    .summary td{ border:1px solid #333; padding:6px 8px; font-size:12px; }
+                    .summary .label{ background:#f8fafc; }
+                    .summary .total{ background:#eef2ff; font-weight:700; }
                   `;
-                  let html = `<!doctype html><html><head><meta charset='utf-8'/><title>Imprimir Presupuesto</title><style>${styles}</style></head><body>`;
-                  html += `<h1>Subcontrato Mano de Obra</h1>`;
-                  html += `<table class='outer'><thead><tr><th class='col-item'>Ítem</th><th>Partida</th><th class='col-un'>Unidad</th><th class='col-pu'>PU ($)</th></tr></thead><tbody>`;
+                  let html = `<!doctype html><html><head><meta charset='utf-8'/><title>Vista previa</title><style>${styles}</style></head><body>`;
+                  const projName = (activeProject?.name || projectInfo?.nombreProyecto || 'Proyecto sin título');
+                  const clientName = (activeProject?.client || projectInfo?.propietario || '');
+                  const location = ((activeProject as any)?.location || [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', '));
+                  const contract = ((activeProject as any)?.contract || (projectInfo as any)?.contrato || '');
+                  html += `<h1>Presupuesto — ${esc(projName)}</h1>`;
+                  html += `<div class='meta'><div>${projName? `<div><strong>Obra:</strong> ${esc(projName)}</div>`:''}${location? `<div><strong>Dirección:</strong> ${esc(location)}</div>`:''}</div><div style='text-align:right'><div><strong>Cliente:</strong> ${esc(clientName)}</div>${contract? `<div><strong>Contrato:</strong> ${esc(contract)}</div>`:''}</div></div>`;
+                  html += `<table class='outer'><thead><tr><th class='col-item'>Código</th><th>Descripción</th><th class='col-un'>Unidad</th><th class='col-cant'>Cantidad</th><th class='col-pu'>P.Unitario</th><th class='col-total'>P.Total</th></tr></thead><tbody>`;
                   chapters.forEach((ch, ci)=>{
-                    const list = chMap[ch.id]||[];
-                    if (!list.length) return;
-                    // Título de capítulo como fila de sección
-                    html += `<tr class='section'><td class='center'>${ci+1}</td><td>${ch.title}</td><td></td><td></td></tr>`;
+                    const list = chMap[ch.id]||[]; if (!list.length) return;
+                    html += `<tr class='section'><td class='center'>${ci+1}</td><td>${ch.title}</td><td></td><td></td><td></td><td></td></tr>`;
                     list.forEach((r, ri)=>{
                       const idx = `${ci+1}.${ri+1}`;
                       const subs: any[] = Array.isArray(r.subRows)? r.subRows : [];
+                      let rowDirectTotal = 0;
+                      let secMO = 0, secMAT = 0, secEQ = 0, secVAR = 0;
                       if (!subs.length) {
-                        html += `<tr><td class='center'>${idx}</td><td>${(r.descripcion||'Partida')}</td><td></td><td></td></tr>`;
+                        // Mostrar cabecera de PARTIDA en MAYÚSCULAS y destacada en gris
+                        html += `<tr class='section'><td class='center'>${idx}</td><td>${(r.descripcion||'Partida').toString().toUpperCase()}</td><td></td><td></td><td></td><td></td></tr>`;
+                        const sIdx = `${ci+1}.${ri+1}.1`;
+                        const un = (r.unidadSalida || (Array.isArray(r.apuIds) && r.apuIds[0] ? (getApuById(r.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                        const qty = Number(r.metrados||0);
+                        const pu = calcRowPu(r);
+                        const tot = (typeof r?.overrideTotal === 'number' && Number.isFinite(r.overrideTotal)) ? r.overrideTotal : (pu * qty);
+                        html += `<tr><td class='center'>${sIdx}</td><td>${'Subpartida'}</td><td class='center'>${un}</td><td class='right'>${qty? fmtQty(qty): ''}</td><td class='right'>${pu? fmtCl(pu): ''}</td><td class='right'>${tot? fmtCl(tot): ''}</td></tr>`;
+                        // Desglose por secciones desde los APUs del nivel partida
+                        const idsList:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                        for(const id of idsList){ try{ const apu = getApuById(id); if(!apu) continue; const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} }
+                        rowDirectTotal = secMO + secMAT + secEQ + secVAR;
                       } else {
-                        // Fila de cabecera de la partida (sin PU)
-                        html += `<tr><td class='center'>${idx}</td><td>${(r.descripcion||'Partida')}</td><td></td><td></td></tr>`;
+                        // Fila cabecera de PARTIDA en MAYÚSCULAS y destacada en gris
+                        html += `<tr class='section'><td class='center'>${idx}</td><td>${(r.descripcion||'Partida').toString().toUpperCase()}</td><td></td><td></td><td></td><td></td></tr>`;
                         subs.forEach((s, si)=>{
                           const sIdx = `${ci+1}.${ri+1}.${si+1}`;
                           const un = (s.unidadSalida || (Array.isArray(s.apuIds) && s.apuIds[0] ? (getApuById(s.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                          const qty = Number(s?.metrados||0);
                           const pu = calcSubPu(s);
-                          html += `<tr><td class='center'>${sIdx}</td><td>${(s.descripcion||'Subpartida')}</td><td class='center'>${un}</td><td class='right'>${pu? fmtCl(pu): ''}</td></tr>`;
+                          const tot = (typeof s?.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : (pu * qty);
+                          html += `<tr><td class='center'>${sIdx}</td><td>${(s.descripcion||'Subpartida')}</td><td class='center'>${un}</td><td class='right'>${qty? fmtQty(qty): ''}</td><td class='right'>${pu? fmtCl(pu): ''}</td><td class='right'>${tot? fmtCl(tot): ''}</td></tr>`;
+                          rowDirectTotal += Number(tot||0);
+                          // Desglose por secciones de cada subrow
+                          const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                          ids.forEach(id=>{ try{ const apu = getApuById(id); if(!apu) return; const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} });
                         });
+                        rowDirectTotal = secMO + secMAT + secEQ + secVAR;
                       }
+                      // Subtotales por secciones
+                      if(secMO) html += `<tr><td></td><td>Subtotal Mano de Obra</td><td></td><td></td><td></td><td class='right'>${fmtCl(secMO)}</td></tr>`;
+                      if(secMAT) html += `<tr><td></td><td>Subtotal Materiales</td><td></td><td></td><td></td><td class='right'>${fmtCl(secMAT)}</td></tr>`;
+                      if(secEQ) html += `<tr><td></td><td>Subtotal Equipos</td><td></td><td></td><td></td><td class='right'>${fmtCl(secEQ)}</td></tr>`;
+                      if(secVAR) html += `<tr><td></td><td>Subtotal Varios</td><td></td><td></td><td></td><td class='right'>${fmtCl(secVAR)}</td></tr>`;
+                      html += `<tr class='section'><td></td><td colspan='4'>COSTO DIRECTO partida ${(r.descripcion||'').toString().toLowerCase()}</td><td class='right'>${rowDirectTotal? fmtCl(rowDirectTotal): ''}</td></tr>`;
                     });
                   });
                   html += `</tbody></table>`;
+                  const ggPct = Number(gg)||0, utilPct = Number(util)||0;
+                  const baseDirecto = Number(sumDirecto)||0;
+                  const ggAmt = baseDirecto * ggPct;
+                  const sub1 = baseDirecto + ggAmt;
+                  const utilAmt = sub1 * utilPct;
+                  const neto = baseDirecto + ggAmt + utilAmt;
+                  html += `<div class='summary'><table><tbody>
+                    <tr><td class='label right'>COSTO DIRECTO</td><td class='right'>${fmtCl(baseDirecto)}</td></tr>
+                    <tr><td class='label right'>utilidad (${(utilPct*100).toFixed(0)}%)</td><td class='right'>${fmtCl(utilAmt)}</td></tr>
+                    <tr><td class='label right'>gastos generales (${(ggPct*100).toFixed(0)}%)</td><td class='right'>${fmtCl(ggAmt)}</td></tr>
+                    <tr><td class='label right total'>total neto</td><td class='right total'>${fmtCl(neto)}</td></tr>
+                  </tbody></table></div>`;
+                  const notesBlock = (budgetNotes && String(budgetNotes).trim())
+                    ? `<div class='notes'><div class='notes-title'>Notas</div><div>${esc(budgetNotes).replace(/\n/g,'<br/>')}</div></div>`
+                    : `<div class='notes'><div class='notes-title'>Notas</div><div style='min-height:72px'></div></div>`;
+                  html += notesBlock;
                   html += `</body></html>`;
-                  w.document.open();
-                  w.document.write(html);
-                  w.document.close();
-                  setTimeout(()=>{ try{ w.focus(); w.print(); }catch{} }, 50);
+                  setPrintPreviewHtml(html);
+                  setPrintPreviewOpen(true);
                 } catch {}
               }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
               <button onClick={()=>{
@@ -4930,8 +5560,18 @@ const App: React.FC = () => {
                     );
                   })()}
                 </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-300">
+                  <input type="checkbox" checked={libHideIncomplete} onChange={(e)=> setLibHideIncomplete(e.currentTarget.checked)} />
+                  Ocultar incompletos
+                </label>
                 <button onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
                 <button onClick={()=>setShowApuAssistant(true)} className="px-3 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-sm text-white">Asistente · APU desde texto</button>
+                <button onClick={()=> setCleanupOpen(true)} className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm text-white">👀 Revisar duplicados</button>
+                <button onClick={autoCleanupApus} className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-sm text-white">🧹 Depurar duplicados</button>
+                <button onClick={()=>{ if(confirm('Esto migrará APUs a secciones (limpiará items cuando existan secciones y derivará secciones desde items cuando falten). ¿Continuar?')) migrateApusToSections(); }} className="px-3 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-sm text-white">🧽 Migrar a secciones</button>
+                {hasBackup && (
+                  <button onClick={restoreBackup} className="px-3 py-1.5 rounded-xl border border-amber-400 text-amber-200 hover:bg-amber-500/10 text-sm">↩️ Deshacer último</button>
+                )}
               </div>
             </div>
 
@@ -4952,7 +5592,14 @@ const App: React.FC = () => {
                   {(() => {
                     const list = (libScope==='mine'? customApus : allApus)
                       .filter(a => !libSearch || (a.descripcion||'').toLowerCase().includes(libSearch.toLowerCase()))
-                      .filter(a => libCategory==='all' || (String(a.categoria||'').trim()===libCategory));
+                      .filter(a => libCategory==='all' || (String(a.categoria||'').trim()===libCategory))
+                      .filter(a => {
+                        if(!libHideIncomplete) return true;
+                        try{
+                          const incomplete = isApuIncomplete(a) || !String(a?.unidadSalida||'').trim() || unitCost(a, resources).unit === 0;
+                          return !incomplete;
+                        }catch{ return true; }
+                      });
                     if(list.length === 0) {
                       return (
                         <tr>
@@ -4968,17 +5615,47 @@ const App: React.FC = () => {
                           <td className="py-2 px-3">{i+1}</td>
                           
                           <td className="py-2 px-3">
-                            <button onClick={()=>toggleExpandRow(a.id)} className="text-left hover:underline">
-                              {a.descripcion}
-                            </button>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button onClick={()=>toggleExpandRow(a.id)} className="text-left hover:underline">
+                                {a.descripcion}
+                              </button>
+                              {(() => {
+                                try {
+                                  const incomplete = isApuIncomplete(a) || !String(a?.unidadSalida||'').trim() || unitCost(a, resources).unit === 0;
+                                  if (!incomplete) return null;
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-300 text-[10px]"
+                                      title="Este APU no tiene costo calculable o le falta unidad/secciones"
+                                      aria-label="APU incompleto"
+                                    >
+                                      incompleto
+                                    </span>
+                                  );
+                                } catch { return null; }
+                              })()}
+                            </div>
                           </td>
                           <td className="py-2 px-3">{a.categoria||''}</td>
                           <td className="py-2 px-3">{a.unidadSalida}</td>
-                          <td className="py-2 px-3 text-right">{fmt(unitCost(a, resources).unit)}</td>
+                          <td className="py-2 px-3 text-right">{
+                            (()=>{
+                              const apuCalc = (expandedId===a.id && expandedForm)? { ...expandedForm, id:a.id } : a;
+                              return fmt(unitCost(apuCalc, resources).unit);
+                            })()
+                          }</td>
                           <td className="py-2 px-3 text-right">
                             <div className="flex justify-end gap-2">
                               <button onClick={()=>toggleExpandRow(a.id)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60" title="Ver/Editar APU" aria-label="Ver/Editar APU">
                                 <PencilSquareIcon className="h-4 w-4"/>
+                              </button>
+                              <button
+                                onClick={() => openUsageModal(a.id)}
+                                className="p-1 rounded-md border border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700/60"
+                                title="Ver usos"
+                                aria-label="Ver usos"
+                              >
+                                👁
                               </button>
                               <button
                                 onClick={() => handleDeleteApu(a.id)}
@@ -5272,6 +5949,44 @@ const App: React.FC = () => {
                                       </div>
                                     );
                                   })}
+                                  {/* Resumen y Total APU */}
+                                  {(() => {
+                                    try{
+                                      const s:any = expandedForm.secciones || {};
+                                      const sumArr = (arr:any[]) => (Array.isArray(arr)? arr:[]).reduce((acc:number, r:any)=> acc + (Number(r?.cantidad)||0) * (Number(r?.pu)||0), 0);
+                                      const tMat = sumArr(s.materiales);
+                                      const tEq  = sumArr(s.equipos);
+                                      const tMO  = sumArr(s.manoObra);
+                                      const tVar = sumArr(s.varios);
+                                      const tExt = (Array.isArray(s.extras)? s.extras:[]).reduce((acc:number, ex:any)=> acc + sumArr(ex?.rows||[]), 0);
+                                      const known = ['materiales','equipos','manoObra','varios','extras','__meta','__titles'];
+                                      const tUnknown = Object.keys(s||{}).reduce((acc:number, k:string)=>{
+                                        if(known.includes(k)) return acc;
+                                        const v:any = s[k];
+                                        if(Array.isArray(v)) return acc + sumArr(v);
+                                        if(v && Array.isArray(v.rows)) return acc + sumArr(v.rows);
+                                        return acc;
+                                      }, 0);
+                                      const total = tMat + tEq + tMO + tVar + tExt + tUnknown;
+                                      return (
+                                        <div className="mt-2 grid gap-2">
+                                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                                            <span>Materiales: <b className="tabular-nums">{fmt(tMat)}</b></span>
+                                            <span>Equipos: <b className="tabular-nums">{fmt(tEq)}</b></span>
+                                            <span>Mano de obra: <b className="tabular-nums">{fmt(tMO)}</b></span>
+                                            <span>Varios: <b className="tabular-nums">{fmt(tVar)}</b></span>
+                                            <span>Extras: <b className="tabular-nums">{fmt(tExt)}</b></span>
+                                            {tUnknown>0 && (<span>Otras secciones: <b className="tabular-nums">{fmt(tUnknown)}</b></span>)}
+                                          </div>
+                                          <div className="flex items-center justify-end">
+                                            <div className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm font-semibold text-slate-200">
+                                              TOTAL APU: <span className="tabular-nums">{fmt(total)}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    }catch{ return null; }
+                                  })()}
                                 </div>
                                 {(() => {
                                   const obs = String((expandedForm.secciones?.__meta?.obs)||'');
@@ -5330,10 +6045,66 @@ const App: React.FC = () => {
             <ApuCleanupModal
               open={cleanupOpen}
               apus={allApus as any}
+              resources={resources as any}
+              usageCounts={apuUsageCounts as any}
+              onShowUsages={(id)=> { setCleanupOpen(false); openUsageModal(id); }}
               onClose={()=> setCleanupOpen(false)}
               onMerge={(targetId, dupIds, removeDup)=> handleMergeApus(targetId, dupIds, removeDup)}
               onEdit={(id)=> { setCleanupOpen(false); openApuDetail(id); }}
+              onDelete={(id)=> handleDeleteApu(id, { skipConfirm: true, silent: true })}
             />
+
+            {/* Modal: Ver usos de APU y reemplazo masivo */}
+            {usageModal.open && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                <div className="w-[min(720px,95vw)] max-h-[85vh] overflow-auto bg-slate-900 rounded-2xl border border-slate-700 p-4 grid gap-3 text-slate-100">
+                  {(() => {
+                    let apuTitle = usageModal.apuId || '';
+                    try{ if(usageModal.apuId){ const a = getApuById(usageModal.apuId); if(a) apuTitle = `${a.descripcion} (${a.id})`; } }catch{}
+                    return (<div className="text-lg font-semibold">Usos del APU · {apuTitle}</div>);
+                  })()}
+                  <div className="text-sm text-slate-300">Total de referencias: {usageModal.usages.length}</div>
+                  {usageModal.usages.length === 0 ? (
+                    <div className="text-sm text-slate-400">Este APU no está en uso en el presupuesto activo.</div>
+                  ) : (
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-2 max-h-[45vh] overflow-auto">
+                      <ul className="text-sm space-y-1">
+                        {usageModal.usages.map((u, i)=> (<li key={i}>• {u.label}</li>))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="grid gap-2">
+                    <label className="text-sm text-slate-300">Reemplazar en todas estas referencias por:</label>
+                    {(() => {
+                      const listId = 'apu-replace-list';
+                      const opts = (allApus||[]).map((a:any)=> ({ id:a.id, label:`${a.descripcion} (${a.id})` }));
+                      return (
+                        <>
+                          <input
+                            list={listId}
+                            className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm"
+                            placeholder="Escribe o selecciona un APU"
+                            value={usageModal.targetId}
+                            onChange={e=> setUsageModal((m)=> ({ ...m, targetId: e.target.value }))}
+                          />
+                          <datalist id={listId}>
+                            {opts.map(o=> (<option key={o.id} value={o.id}>{o.label}</option>))}
+                          </datalist>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={closeUsageModal} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
+                    <button
+                      onClick={()=> usageModal.apuId && replaceApuEverywhere(usageModal.apuId, usageModal.targetId)}
+                      disabled={!usageModal.apuId || !usageModal.targetId || usageModal.apuId===usageModal.targetId}
+                      className="px-3 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >Reemplazar</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -5770,7 +6541,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-slate-800 rounded-2xl p-4 shadow grid grid-cols-2 gap-3 md:col-span-2">
+              <div className="bg-slate-800 rounded-2xl p-4 shadow grid grid-cols-1 sm:grid-cols-3 gap-3 md:col-span-2">
                 <div>
                   <label className="text-sm text-slate-300">Gastos generales (%)</label>
                   <div className="mt-1 relative">
@@ -5827,6 +6598,19 @@ const App: React.FC = () => {
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">%</span>
                   </div>
+                </div>
+                {/* Notas del presupuesto debajo de los porcentajes */}
+                <div className="col-span-1 sm:col-span-3">
+                  <label className="text-sm text-slate-300 grid gap-1">
+                    <span>Notas</span>
+                    <textarea
+                      rows={3}
+                      value={budgetNotes}
+                      onChange={e=> setBudgetNotes(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2"
+                      placeholder="Notas u observaciones del presupuesto"
+                    />
+                  </label>
                 </div>
               </div>
 

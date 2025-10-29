@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useLocalStorage as useLocalStorageBase } from './useLocalStorage';
 
 // ====== Hook para detectar estado de conexión ======
 export const useOnlineStatus = () => {
@@ -21,38 +22,10 @@ export const useOnlineStatus = () => {
 };
 
 // ====== Hook para localStorage con sincronización ======
+// Nota: unificamos el hook de localStorage para evitar duplicados.
+// Usa la implementación central de `./useLocalStorage` y añadimos un helper `removeValue` local.
 export const useLocalStorage = <T>(key: string, initialValue: T) => {
-  // Estado para almacenar nuestro valor
-  // Pasar función inicial a useState así que la lógica solo se ejecuta una vez
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    try {
-      // Obtener del localStorage por key
-      const item = window.localStorage.getItem(key);
-      // Parsear JSON almacenado o si no existe devolver initialValue
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      // Si hay error también devolvemos initialValue
-      console.warn(`Error reading localStorage key "${key}":`, error);
-      return initialValue;
-    }
-  });
-
-  // Devolver una versión wrapped de la función setter de useState que persiste el nuevo valor en localStorage
-  const setValue = useCallback((value: T | ((val: T) => T)) => {
-    try {
-      // Permitir que value sea una función así que tenemos la misma API que useState
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      // Guardar en state
-      setStoredValue(valueToStore);
-      // Guardar en localStorage
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (error) {
-      // Una implementación más avanzada manejaría el caso de error
-      console.error(`Error setting localStorage key "${key}":`, error);
-    }
-  }, [key, storedValue]);
-
-  // Función para eliminar el item del localStorage
+  const [storedValue, setStoredValue] = useLocalStorageBase<T>(key, initialValue);
   const removeValue = useCallback(() => {
     try {
       window.localStorage.removeItem(key);
@@ -60,9 +33,8 @@ export const useLocalStorage = <T>(key: string, initialValue: T) => {
     } catch (error) {
       console.error(`Error removing localStorage key "${key}":`, error);
     }
-  }, [key, initialValue]);
-
-  return [storedValue, setValue, removeValue] as const;
+  }, [key, initialValue, setStoredValue]);
+  return [storedValue, setStoredValue, removeValue] as const;
 };
 
 // ====== Hook para cache con expiración ======

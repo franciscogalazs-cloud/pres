@@ -9,7 +9,20 @@ export const fmt = (n: number): string => {
 };
 
 export const normUnit = (u: string): string => {
-  return u.replace("²", "2").replace("³", "3").toLowerCase();
+  // Normaliza unidades con superíndices reales y variantes a forma plana antes de compararlas
+  // Ejemplos: m² -> m2, m³ -> m3, ㎡ -> m2, ㎥ -> m3, m^2 -> m2, M^3 -> m3
+  let s = String(u || '').trim();
+  // Normalización Unicode de compatibilidad (convierte algunos símbolos a formas base cuando procede)
+  try { s = s.normalize('NFKC'); } catch {}
+  // Reemplazos explícitos de superíndices U+00B2/U+00B3
+  s = s.replace(/²/g, '2').replace(/³/g, '3');
+  // Símbolos cuadrados/cúbicos especiales (U+33A1, U+33A5)
+  s = s.replace(/\u33A1/g, 'm2').replace(/\u33A5/g, 'm3');
+  // Notación con circunflejo: permitir espacios alrededor de ^ y después de m
+  s = s.replace(/m\s*\^\s*2/gi, 'm2').replace(/m\s*\^\s*3/gi, 'm3');
+  // Quitar espacios y bajar a minúsculas
+  s = s.replace(/\s+/g, '').toLowerCase();
+  return s;
 };
 
 export const clamp0 = (x: number): number => {
@@ -18,6 +31,25 @@ export const clamp0 = (x: number): number => {
 
 export const uid = (): string => {
   return Math.random().toString(36).slice(2);
+};
+
+// Normaliza a Unicode NFC para evitar textos con tildes rotas por copias/importaciones
+export const toNFC = (s: string): string => {
+  try { return String(s || '').normalize('NFC'); } catch { return String(s || ''); }
+};
+
+// Correcciones comunes de mojibake (UTF-8 mal interpretado como ISO-8859-1)
+export const fixMojibake = (s: string): string => {
+  const map: Record<string, string> = {
+    'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú',
+    'Ã±': 'ñ', 'Ã‘': 'Ñ', 'Ã¼': 'ü', 'Ãœ': 'Ü',
+    'Â¿': '¿', 'Â¡': '¡', 'Âº': 'º', 'Âª': 'ª',
+    'Ã€': 'À', 'Ã‰': 'É', 'Ãˆ': 'È', 'Ã‚': 'Â', 'â€“': '–', 'â€”': '—', 'â€˜': '‘', 'â€™': '’', 'â€œ': '“', 'â€': '”', 'â€¢': '•', 'â€¦': '…',
+    'mÂ²': 'm²', 'mÂ³': 'm³'
+  };
+  let out = String(s || '');
+  for (const [bad, good] of Object.entries(map)) out = out.replace(new RegExp(bad, 'g'), good);
+  return toNFC(out);
 };
 
 // ====== Utilidades de cálculo ======

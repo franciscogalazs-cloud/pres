@@ -43,8 +43,21 @@ const normalizeInput = (
 };
 
 export function useNotifications() {
-  // Modo silencioso: desactivar avisos/toasts devolviendo no-ops
-  const disabled = true;
+  // Modo silencioso (parametrizable): permite desactivar avisos/toasts vía env o localStorage
+  // - VITE_DISABLE_TOASTS=true desactiva toasts en build
+  // - localStorage['apu-toasts-disabled'] = '1' | 'true' desactiva toasts en runtime
+  const disabled = (() => {
+    try {
+      // Prioridad a flag de entorno de Vite (en tiempo de build)
+      const envFlag = (import.meta as any)?.env ? String(((import.meta as any).env.VITE_DISABLE_TOASTS) || '').toLowerCase() : '';
+      if (envFlag === 'true' || envFlag === '1') return true;
+    } catch {}
+    try {
+      const ls = String(localStorage.getItem('apu-toasts-disabled') || '').toLowerCase();
+      if (ls === 'true' || ls === '1') return true;
+    } catch {}
+    return false;
+  })();
 
   if (disabled) {
     const noopId = '';

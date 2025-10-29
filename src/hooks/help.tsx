@@ -161,7 +161,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const { isTooltipEnabled } = useHelp();
   const tooltipRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
-  const timeoutRef = useRef<number>();
+  const timeoutRef = useRef<any>();
 
   const showTooltip = () => {
     if (disabled || !isTooltipEnabled) return;

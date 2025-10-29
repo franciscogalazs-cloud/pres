@@ -59,11 +59,33 @@ npm run dev        # abre http://localhost:5173
 - Totales (directo, GG, Utilidad, IVA) con parámetros ajustables.
 - Formato CLP coherente (es-CL) en toda la UI.
 
+### Exportación e impresión (flujo real)
+- Vista “Imprimir” genera un HTML A4 con:
+  - Cabecera por PARTIDA en MAYÚSCULAS destacada en gris.
+  - Subpartidas listadas con sus cantidades, P.Unit y P.Total.
+  - Subtotales por sección (Materiales, Mano de Obra, Equipos, Varios) cuando corresponda.
+  - Fila “COSTO DIRECTO partida …” donde solo “COSTO DIRECTO” va en mayúsculas; resto en minúsculas.
+  - Resumen final sin IVA con “COSTO DIRECTO” en mayúsculas y el resto en minúsculas.
+- Exportación a Excel replica la estructura anterior con estilos (cabeceras grises, subtotales en negrita, costo directo con realce sutil). Fallback a SheetJS si ExcelJS no está disponible.
+
+### Persistencia (qué guardamos y dónde)
+- Biblioteca de APUs, alias de fusión, proyectos (stick), usuarios simples y notas del presupuesto en `localStorage`.
+- Alias: al limpiar duplicados se crean equivalencias id→id canónico y se respetan al buscar/usar APUs.
+- Plantillas: `defaults` incluye catálogos y APUs base; se normalizan unidades (m²/m³ → m2/m3) para mejorar coincidencias.
+- Usuarios: registros mínimos de prueba (email, nombre) para etiquetar presupuestos. Se pueden limpiar desde la UI.
+
+### Notificaciones (toasts)
+- Habilitadas por defecto. Se pueden desactivar con:
+  - `VITE_DISABLE_TOASTS=true` (en build) o
+  - `localStorage['apu-toasts-disabled']='1'` (en runtime).
+
 ## Datos iniciales y presets
 
 - Catálogo de recursos “hardcodeado”.
 - APUs de ejemplo ampliados (incluye partidas para piscina y red hidráulica en conjunto).
 - Botones “Cargar preset Casa 10×10” y “Cargar preset piscina” para poblar un presupuesto de ejemplo.
+
+Notas de encoding: Las cadenas se normalizan a Unicode NFC y las unidades con superíndices (m²/m³) se convierten a forma plana (m2/m3) para evitar errores en búsquedas y similitudes.
 
 ## Despliegue (GitHub Pages)
 
@@ -95,3 +117,24 @@ Notas importantes:
 ---
 
 Licencia: MIT (o la que definas).
+
+## Módulos alternativos y flags
+- Variantes de app: `App.tsx` (principal) y `AppModular.tsx` (alternativa). Selección por flag de Vite:
+  - `VITE_APP_VARIANT=modular` para cargar `AppModular`.
+  - Por defecto usa `App`.
+- El resto de variantes legacy (AppFull/AppClean) se recomiendan migrar a feature flags o documentarlas; no se usan en build.
+
+## Hooks de offline y almacenamiento
+- `src/hooks/offline.ts` concentra hooks de conexión, cache, backup y datos offline.
+- Unificación: se reutiliza `useLocalStorage` central y se evita duplicar implementaciones. Importa desde `src/hooks`:
+  - `useOnlineStatus`, `useOfflineData`, `useAutoBackup`.
+
+## Dependencias y carpetas auxiliares
+- Directorios `api/` y `frontend/` son placeholders de experimentos/prototipos y no participan del build de la SPA.
+  - Si pasan a producción, documenta su propósito y pipeline; si no, considera limpiarlos para reducir ruido.
+
+## Tests
+- Se añadieron pruebas básicas (Vitest) para utilidades críticas:
+  - Normalización de unidades (`normUnit`).
+  - Cálculo de costos unitarios (`unitCost`).
+- Ejecuta con `npm run test` (requiere instalar dependencias de dev).

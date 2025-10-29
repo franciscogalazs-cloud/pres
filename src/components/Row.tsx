@@ -1,6 +1,7 @@
 import React from "react";
 import CurrencyInput from "./CurrencyInput";
 import { TrashIcon, PencilSquareIcon, DocumentDuplicateIcon, ChevronDownIcon, ChevronRightIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
+import { readAliasMap } from "../utils/match";
 
 type RowProps = {
   index: number;
@@ -24,16 +25,42 @@ type RowProps = {
 export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUpdateSubRow, onRemoveSubRow, onMoveChapter, onDelete, onDuplicate, getApuById, unitCost, resources, fmt, onUpdateRow, onShowApuDetail }: RowProps) {
   const [rowCollapsed, setRowCollapsed] = React.useState<boolean>(false);
   const [subCollapsed, setSubCollapsed] = React.useState<Record<string, boolean>>({});
-  const qty = Number(row.metrados || 0);
-  const ids: string[] = row.apuIds?.length ? row.apuIds : (row.apuId ? [row.apuId] : []);
-  const isEmpty = Array.isArray(row.subRows) ? row.subRows.length === 0 : (ids.length === 0);
-  const pu = ids.reduce((acc, id) => {
-    try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; }
-  }, 0);
-  const effPu = typeof row.overrideUnitPrice === 'number' && Number.isFinite(row.overrideUnitPrice) ? row.overrideUnitPrice : pu;
-  const _total = typeof row.overrideTotal === 'number' && Number.isFinite(row.overrideTotal) ? row.overrideTotal : (effPu * qty);
-  const _unitOptions = ['','u','m','m2','m3','kg','jornal','día','hora','gl'];
-  const _defaultUnit = row.unidadSalida ?? (ids[0] ? (getApuById(ids[0])?.unidadSalida || '') : '');
+  // Consideramos "vacía" si no tiene subpartidas; los APUs solo deben mostrarse en subpartidas
+  const isEmpty = Array.isArray(row.subRows) ? row.subRows.length === 0 : true;
+
+  const getDisplayInfo = React.useCallback((apuId: string, apuObj: any): { pos: number | null; code: string | null } => {
+    try {
+      const normalize = (c: string) => {
+        if (!c) return '';
+        // Quitar prefijo placeholder "01-" o "01 " si existe
+        const trimmed = String(c).trim();
+        if (/^01[\-\s]/.test(trimmed)) return trimmed.replace(/^01[\-\s]*/, '');
+        return trimmed;
+      };
+      const aliases = readAliasMap() || {} as Record<string,string>;
+      const canon = aliases[String(apuId)] || String(apuId);
+      const raw = localStorage.getItem('apu-library');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const idx = list.findIndex((a:any) => String(a?.id||'') === String(canon));
+          if (idx >= 0) {
+            const found = list[idx];
+            const pos = idx + 1;
+            const code = found && found.codigo ? normalize(String(found.codigo)) : null;
+            return { pos, code };
+          }
+          // Si no está en la biblioteca, intentar mostrar su código si existe en memoria o por id directo
+          const fromList = list.find((a:any) => String(a?.id||'') === String(apuObj?.id||''));
+          const code = fromList && fromList.codigo ? normalize(String(fromList.codigo)) : (apuObj?.codigo ? normalize(String(apuObj.codigo)) : null);
+          return { pos: null, code };
+        }
+      }
+      // Fallback: sólo código del objeto si existe
+      if (apuObj && apuObj.codigo) return { pos: null, code: normalize(String(apuObj.codigo)) };
+    } catch {}
+    return { pos: null, code: null };
+  }, []);
 
   return (
     <>
@@ -46,7 +73,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
           aria-label="Agregar subpartida"
           onClick={() => onAddSubRow && onAddSubRow(row.id)}
           className={`w-full h-9 rounded-md bg-transparent border-0 px-3 text-left text-xs min-w-0 truncate focus:outline-none focus:ring-1 ${isEmpty ? 'focus:ring-amber-500' : 'focus:ring-cyan-500'}`}
-          title={isEmpty ? 'Partida vacía: agrega una subpartida o APU' : 'Agregar subpartida'}
+          title={isEmpty ? 'Partida vacía: agrega una subpartida' : 'Agregar subpartida'}
         >
           {(row.descripcion?.trim()) || 'Sin nombre'} {isEmpty && <span className="ml-2 text-amber-300">(vacía)</span>}
         </button>
@@ -102,62 +129,7 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
         </div>
       </td>
     </tr>
-    {(ids.length > 0 && !rowCollapsed) && (
-      <tr className="bg-slate-900/40">
-        {/* # columna vacía para alineación */}
-        <td className="px-3 w-10"></td>
-        {/* Descripción: lista de APUs asignados */}
-        <td className="px-3 py-2 align-top">
-          <div className="text-[11px] text-slate-300 mb-1">APUs asignados:</div>
-          <div className="grid gap-1">
-            {ids.map((id) => {
-              try {
-                const apu = getApuById(id);
-                const un = apu?.unidadSalida || 'GL';
-                const puApu = (()=>{ try{ return unitCost(apu, resources).unit; }catch{ return 0; } })();
-                return (
-                  <div key={id} className="flex items-center gap-2 text-[11px] group">
-                    <span className="text-slate-500">•</span>
-                    <button
-                      onClick={() => onShowApuDetail && onShowApuDetail(id)}
-                      className="text-slate-200 hover:underline text-left"
-                      title={apu.descripcion}
-                    >
-                      {apu.descripcion}
-                    </button>
-                    <span className="text-slate-400">— {un} · {fmt(puApu)}</span>
-                    <button
-                      onClick={() => {
-                        if (!confirm('¿Quitar este APU de la partida?')) return;
-                        const next = ids.filter(x => x !== id);
-                        if (next.length > 0) {
-                          onUpdateRow(row.id, { apuIds: next });
-                        } else {
-                          onUpdateRow(row.id, { apuIds: [], apuId: '' });
-                        }
-                      }}
-                      className="ml-1 p-1 rounded-md text-slate-400 hover:text-red-200 hover:bg-red-900/30"
-                      title="Quitar APU de la partida"
-                      aria-label="Quitar APU de la partida"
-                    >
-                      <TrashIcon className="h-3.5 w-3.5"/>
-                    </button>
-                  </div>
-                );
-              } catch {
-                return null;
-              }
-            })}
-          </div>
-        </td>
-        {/* Resto de columnas vacías para mantener el layout */}
-        <td className="px-3 w-20"></td>
-        <td className="px-3 w-24"></td>
-        <td className="px-3 w-36"></td>
-        <td className="px-3 w-40"></td>
-        <td className="px-2 w-32"></td>
-      </tr>
-    )}
+    {/* Los APUs a nivel de partida ya no se muestran; deben agregarse como subpartidas */}
     {/* Subpartidas como filas completas */}
   {!rowCollapsed && (Array.isArray(row.subRows)? row.subRows: []).map((s:any, sIdx:number)=>{
       const sid = s.id;
@@ -180,6 +152,11 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                 title={`${(s.descripcion?.trim()) || 'Subpartida'}${sIds.length===0 ? ' — sin APU' : ''}`}
               >
                 <span className="pl-8">{(s.descripcion?.trim()) || 'Subpartida'}</span>
+                {(s as any)._migrated && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-900/30 border border-indigo-700/50 text-indigo-200 text-[10px] align-middle">
+                    migrado
+                  </span>
+                )}
                 {sIds.length === 0 && (
                   <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-300 text-[10px] align-middle">
                     sin APU
@@ -284,15 +261,34 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
                   {sIds.map((id) => {
                     try {
                       const apu = getApuById(id);
-                      const un = apu?.unidadSalida || 'GL';
-                      const puApu = (()=>{ try{ return unitCost(apu, resources).unit; }catch{ return 0; } })();
                         return (
                           <div key={id} className="flex items-center gap-2 text-[11px] group">
                           <span className="text-slate-500">•</span>
-                          <button onClick={() => onShowApuDetail && onShowApuDetail(id)} className="text-slate-200 hover:underline text-left" title={apu.descripcion}>
-                            {apu.descripcion}
-                          </button>
-                          <span className="text-slate-400">— {un} · {fmt(puApu)}</span>
+                          {apu && (
+                            <>
+                              {(() => {
+                                const info = getDisplayInfo(id, apu);
+                                const label = info.pos != null ? `${info.pos}` : '';
+                                return label ? (
+                                  <button
+                                    onClick={() => onShowApuDetail && onShowApuDetail(id)}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-800/70 border border-slate-700 text-[10px] text-slate-200 font-mono hover:bg-slate-700/70"
+                                    title={`${apu.descripcion || ''}`}
+                                    aria-label="Número de biblioteca"
+                                  >
+                                    {label}
+                                  </button>
+                                ) : null;
+                              })()}
+                              <button
+                                onClick={() => onShowApuDetail && onShowApuDetail(id)}
+                                className="text-slate-200 hover:underline text-left truncate max-w-[44ch]"
+                                title={apu.descripcion}
+                              >
+                                {apu.descripcion}
+                              </button>
+                            </>
+                          )}
                             <button
                               onClick={() => {
                                 if (!confirm('¿Quitar este APU de la subpartida?')) return;

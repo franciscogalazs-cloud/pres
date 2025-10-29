@@ -27,8 +27,59 @@ export function unitCost(
 
   const apuAny = apu as any;
 
-  // Ruta 1: APUs clásicos con items (coef/rendimiento/subapu)
-  if (Array.isArray(apuAny?.items)) {
+  // Preferir secciones si existen filas (evita que 'items' legacy reemplace lo editado en secciones)
+  const hasRowsInSections = (() => {
+    try{
+      const s = apuAny?.secciones || {};
+      const known = ['materiales','equipos','manoObra','varios'];
+      const hasABCD = known.some((k)=> Array.isArray(s?.[k]) && s[k].length>0);
+      const hasExtras = Array.isArray(s?.extras) && s.extras.some((ex:any)=> Array.isArray(ex?.rows) && ex.rows.length>0);
+      const hasUnknown = Object.keys(s||{}).some(k=> {
+        if(known.includes(k) || k==='extras' || k==='__meta' || k==='__titles') return false;
+        const v:any = (s as any)[k];
+        if(Array.isArray(v)) return v.length>0;
+        if(v && Array.isArray(v.rows)) return v.rows.length>0;
+        return false;
+      });
+      return !!(hasABCD || hasExtras || hasUnknown);
+    }catch{return false;}
+  })();
+
+  // Ruta A: APUs con secciones (materiales/equipos/manoObra/varios/extras)
+  if (hasRowsInSections) {
+    const accRows = (arr: any) => (Array.isArray(arr) ? arr : []) as Array<{ descripcion?: string; unidad?: string; cantidad?: number; pu?: number }>;
+    const secs = apuAny.secciones || {};
+    const known = ['materiales','equipos','manoObra','varios'];
+    const allRows: Array<{ descripcion?: string; cantidad?: number; pu?: number }> = [
+      ...accRows(secs.materiales),
+      ...accRows(secs.equipos),
+      ...accRows(secs.manoObra),
+      ...accRows(secs.varios),
+    ];
+    if (Array.isArray(secs.extras)) {
+      for (const ex of secs.extras) {
+        allRows.push(...accRows(ex?.rows));
+      }
+    }
+    // Incluir secciones heredadas como claves adicionales (no estándar)
+    for (const k of Object.keys(secs||{})){
+      if(known.includes(k) || k==='extras' || k==='__meta' || k==='__titles') continue;
+      const v:any = (secs as any)[k];
+      if(Array.isArray(v)) allRows.push(...accRows(v));
+      else if(v && Array.isArray(v.rows)) allRows.push(...accRows(v.rows));
+    }
+    for (const r of allRows) {
+      const qty = Number(r?.cantidad || 0);
+      const pu = Number(r?.pu || 0);
+      const costo = qty * pu;
+      if (costo > 0) {
+        desglose.push({ nombre: String(r?.descripcion || 'Item'), costo });
+        total += costo;
+      }
+    }
+
+  // Ruta B: APUs clásicos con items (coef/rendimiento/subapu)
+  } else if (Array.isArray(apuAny?.items)) {
     for (const it of apuAny.items as any[]) {
       // Caso recurso directo (coef o rendimiento)
       if (it.tipo === 'coef' || it.tipo === 'rendimiento') {
@@ -64,31 +115,6 @@ export function unitCost(
         continue;
       }
     }
-  } else if (apuAny && apuAny.secciones) {
-    // Ruta 2: APUs con secciones (materiales/equipos/manoObra/varios/extras)
-    const accRows = (arr: any) => (Array.isArray(arr) ? arr : []) as Array<{ descripcion?: string; unidad?: string; cantidad?: number; pu?: number }>;
-    const secs = apuAny.secciones || {};
-    const allRows: Array<{ descripcion?: string; cantidad?: number; pu?: number }> = [
-      ...accRows(secs.materiales),
-      ...accRows(secs.equipos),
-      ...accRows(secs.manoObra),
-      ...accRows(secs.varios),
-    ];
-    // Extras como arreglo [{title, rows}]
-    if (Array.isArray(secs.extras)) {
-      for (const ex of secs.extras) {
-        allRows.push(...accRows(ex?.rows));
-      }
-    }
-    for (const r of allRows) {
-      const qty = Number(r?.cantidad || 0);
-      const pu = Number(r?.pu || 0);
-      const costo = qty * pu;
-      if (costo > 0) {
-        desglose.push({ nombre: String(r?.descripcion || 'Item'), costo });
-        total += costo;
-      }
-    }
   }
 
   const result = { unit: total, desglose };
@@ -97,6 +123,95 @@ export function unitCost(
     stack.delete(apu.id);
   }
   return result;
+}
+
+// Costo unitario desglosado por secciones principales del APU
+// Devuelve costos por unidad de salida del APU para: materiales, manoObra, equipos y varios
+export function unitCostBySection(
+  apu: Apu | any,
+  resources: Record<string, Resource>,
+  apusIndex?: Record<string, Apu | any>,
+  memo: Map<string, { materiales:number; manoObra:number; equipos:number; varios:number }> = new Map(),
+  stack: Set<string> = new Set()
+): { materiales:number; manoObra:number; equipos:number; varios:number } {
+  const empty = { materiales:0, manoObra:0, equipos:0, varios:0 } as const;
+  if(!apu) return { ...empty };
+  const id = (apu as any).id;
+  if (typeof id === 'string' && memo.has(id)) return memo.get(id)!;
+  if (typeof id === 'string' && stack.has(id)) return { ...empty };
+  if (typeof id === 'string') stack.add(id);
+
+  const out = { materiales:0, manoObra:0, equipos:0, varios:0 };
+  const anyApu = apu as any;
+
+  const hasRowsInSections = (() => {
+    try{
+      const s = anyApu?.secciones || {};
+      const known = ['materiales','equipos','manoObra','varios'];
+      const hasABCD = known.some((k)=> Array.isArray(s?.[k]) && s[k].length>0);
+      const hasExtras = Array.isArray(s?.extras) && s.extras.some((ex:any)=> Array.isArray(ex?.rows) && ex.rows.length>0);
+      const hasUnknown = Object.keys(s||{}).some(k=> {
+        if(known.includes(k) || k==='extras' || k==='__meta' || k==='__titles') return false;
+        const v:any = (s as any)[k];
+        if(Array.isArray(v)) return v.length>0;
+        if(v && Array.isArray(v.rows)) return v.rows.length>0;
+        return false;
+      });
+      return !!(hasABCD || hasExtras || hasUnknown);
+    }catch{return false;}
+  })();
+
+  if (hasRowsInSections) {
+    const accRows = (arr: any) => (Array.isArray(arr) ? arr : []) as Array<{ descripcion?: string; unidad?: string; cantidad?: number; pu?: number }>;
+    const secs = anyApu.secciones || {};
+    for(const r of accRows(secs.materiales)) out.materiales += Number(r?.cantidad||0) * Number(r?.pu||0);
+    for(const r of accRows(secs.manoObra))  out.manoObra  += Number(r?.cantidad||0) * Number(r?.pu||0);
+    for(const r of accRows(secs.equipos))   out.equipos   += Number(r?.cantidad||0) * Number(r?.pu||0);
+    for(const r of accRows(secs.varios))    out.varios    += Number(r?.cantidad||0) * Number(r?.pu||0);
+    // extras y secciones heredadas suman a 'varios'
+    if (Array.isArray(secs.extras)) for(const ex of secs.extras) for(const r of accRows(ex?.rows)) out.varios += Number(r?.cantidad||0) * Number(r?.pu||0);
+    const known = ['materiales','equipos','manoObra','varios'];
+    for(const k of Object.keys(secs||{})){
+      if(known.includes(k) || k==='extras' || k==='__meta' || k==='__titles') continue;
+      const v:any = secs[k];
+      if(Array.isArray(v)) for(const r of v) out.varios += Number(r?.cantidad||0) * Number(r?.pu||0);
+      else if(v && Array.isArray(v.rows)) for(const r of v.rows) out.varios += Number(r?.cantidad||0) * Number(r?.pu||0);
+    }
+  } else if (Array.isArray(anyApu?.items)) {
+    for (const it of anyApu.items as any[]) {
+      if (it.tipo === 'coef' || it.tipo === 'rendimiento') {
+        const r = resources[it.resourceId as string];
+        if (!r) continue;
+        let costo = 0;
+        if (it.tipo === 'coef') {
+          const merma = 1 + (it.merma ?? 0);
+          costo = (it.coef ?? 0) * r.precio * merma;
+        } else {
+          costo = r.precio / (it.rendimiento || 1);
+        }
+        const tipo = r.tipo;
+        if (tipo === 'material') out.materiales += costo;
+        else if (tipo === 'mano_obra') out.manoObra += costo;
+        else if (tipo === 'equipo') out.equipos += costo;
+        else out.varios += costo;
+        continue;
+      }
+      if (it.tipo === 'subapu') {
+        const subId = it.apuRefId as string;
+        const sub = apusIndex?.[subId];
+        if (!sub) continue;
+        const coef = it.coef ?? (it.rendimiento ? 1 / (it.rendimiento as number) : 1);
+        const subB = unitCostBySection(sub, resources, apusIndex, memo, stack);
+        out.materiales += coef * subB.materiales;
+        out.manoObra  += coef * subB.manoObra;
+        out.equipos   += coef * subB.equipos;
+        out.varios    += coef * subB.varios;
+      }
+    }
+  }
+
+  if (typeof id === 'string') { memo.set(id, out); stack.delete(id); }
+  return out;
 }
 
 // ====== Cálculo de breakdown de costos ======
