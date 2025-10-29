@@ -1,5 +1,9 @@
 # APU Presupuestos (Vite + React + TS + Tailwind)
 
+[![Deploy to GitHub Pages](https://github.com/franciscogalazs-cloud/pres/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/franciscogalazs-cloud/pres/actions/workflows/deploy-pages.yml)
+
+Prod: https://franciscogalazs-cloud.github.io/pres/
+
 Aplicación de gestión de APU y presupuestos de construcción. Stack: Vite + React 18 + TypeScript + Tailwind.
 
 ## Estructura del proyecto
@@ -89,14 +93,15 @@ Notas de encoding: Las cadenas se normalizan a Unicode NFC y las unidades con su
 
 ## Despliegue (GitHub Pages)
 
-El proyecto está preparado para publicarse en GitHub Pages. Puedes usar:
+El proyecto se publica automáticamente a GitHub Pages usando el workflow oficial de Actions:
 
-- GitHub Actions para publicar desde `main` (recomendado para producción).
-- Rama `gh-pages` para demos rápidas desde features.
+- Workflow: `.github/workflows/deploy-pages.yml` (se ejecuta en cada push a `main`).
+- Entorno: `github-pages` (sin rama `gh-pages`).
+- URL: https://franciscogalazs-cloud.github.io/pres/
 
 Notas importantes:
-- Configura `base` de Vite en `/pres/` para rutas correctas al publicar en Pages.
-- Incluye `404.html` como fallback de SPA (copia de `index.html`).
+- `vite.config.ts` ya define `base: '/pres/'` para rutas correctas en Pages.
+- Se copia `dist/index.html` a `dist/404.html` como fallback de SPA.
 
 ## Buenas prácticas del repo
 
