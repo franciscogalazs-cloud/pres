@@ -1,8 +1,7 @@
 import type { Resource, Apu, Templates } from '../types';
-
-// ====== Recursos base - valores por defecto ======
-
-export const defaultResources: Record<string, Resource> = {
+import { fixMojibake, toNFC, normUnit } from '../utils/formatters';
+// Definición base (sin sanitizar) de recursos por defecto
+const baseDefaultResources: Record<string, Resource> = {
   jornal_maestro: { 
     id: "jornal_maestro", 
     tipo: "mano_obra", 
@@ -112,10 +111,18 @@ export const defaultResources: Record<string, Resource> = {
     id: 'regulador_gas_lote', tipo: 'material', nombre: 'Cañería gas y regulador (lote)', unidad: 'gl', precio: 120000
   },
 };
-
-// ====== APUs predefinidos ======
-
-export const apus: Apu[] = [
+// Sanitiza textos y unidades para evitar mojibake y problemas de coincidencia
+const cleanText = (s: string) => toNFC(fixMojibake(String(s || ''))).trim();
+const sanitizeResource = (r: Resource): Resource => ({
+  ...r,
+  nombre: cleanText(r.nombre),
+  unidad: normUnit(cleanText(r.unidad)),
+});
+export const defaultResources: Record<string, Resource> = Object.fromEntries(
+  Object.entries(baseDefaultResources).map(([k, v]) => [k, sanitizeResource(v)])
+);
+// Definición base (sin sanitizar) de APUs predefinidos
+const baseApus: Apu[] = [
   {
     id: "apu_topografia_inicial",
     descripcion: "Levantamiento topográfico y PRs",
@@ -290,10 +297,14 @@ export const apus: Apu[] = [
     ],
   },
 ];
-
-// ====== Plantillas predefinidas ======
-
-export const defaultTemplates: Templates = {
+const sanitizeApu = (a: Apu): Apu => ({
+  ...a,
+  descripcion: cleanText(a.descripcion),
+  unidadSalida: normUnit(cleanText(a.unidadSalida)),
+});
+export const apus: Apu[] = baseApus.map(sanitizeApu);
+// Definición base (sin sanitizar) de plantillas
+const baseTemplates: Templates = {
   'vivienda_basica': {
     name: 'Vivienda Básica (60m²)',
     items: [
@@ -317,3 +328,12 @@ export const defaultTemplates: Templates = {
     ]
   }
 };
+export const defaultTemplates: Templates = Object.fromEntries(
+  Object.entries(baseTemplates).map(([k, t]) => [
+    k,
+    {
+      ...t,
+      name: cleanText(t.name),
+    },
+  ])
+);
