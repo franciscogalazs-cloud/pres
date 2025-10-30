@@ -1,5 +1,6 @@
 import React from 'react';
 import { isApuIncomplete } from '../../utils/match';
+import { unitCost } from '../../utils/calculations';
 
 export type SelectApuModalProps = {
   open: boolean;
@@ -7,11 +8,19 @@ export type SelectApuModalProps = {
   onPick: (id: string) => void;
   apus: any[];
   onCreateNew?: () => void;
+  // Ghost costs context (opcional)
+  resources?: Record<string, any>;
+  apusIndex?: Record<string, any>;
+  targetUnit?: string;
+  targetQty?: number;
+  fmt?: (n: number) => string;
 };
 
-export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNew }: SelectApuModalProps) {
+export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNew, resources = {}, apusIndex = {}, targetUnit, targetQty, fmt }: SelectApuModalProps) {
   const [term, setTerm] = React.useState('');
   const [hideIncomplete, setHideIncomplete] = React.useState(false);
+  const [hoverId, setHoverId] = React.useState<string | null>(null);
+  const format = React.useMemo(() => fmt || ((n: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Math.round(n || 0))), [fmt]);
   if (!open) return null;
   const list = (apus || [])
     .filter((a) => !term || String(a.descripcion || '').toLowerCase().includes(term.toLowerCase()))
@@ -47,14 +56,27 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
                     <th className="py-2 px-3">Descripción</th>
                     <th className="py-2 px-3 w-28">Cat.</th>
                     <th className="py-2 px-3 w-24">Unidad</th>
+                    <th className="py-2 px-3 w-44 text-right">Ghost cost</th>
                     <th className="py-2 px-3 w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((a: any) => {
                     const incomplete = isApuIncomplete(a) || !String(a?.unidadSalida||'').trim();
+                    let unitGhost: number | null = null;
+                    let totalGhost: number | null = null;
+                    if (!incomplete) {
+                      try {
+                        const res = unitCost(a, resources as any, apusIndex as any);
+                        unitGhost = Number(res?.unit || 0);
+                        if (targetQty && targetQty > 0) {
+                          totalGhost = unitGhost * Number(targetQty || 0);
+                        }
+                      } catch {}
+                    }
                     return (
-                      <tr key={a.id} className="border-t border-slate-800 hover:bg-slate-800/60">
+                      <tr key={a.id} className="border-t border-slate-800 hover:bg-slate-800/60"
+                        onMouseEnter={()=> setHoverId(a.id)} onMouseLeave={()=> setHoverId(null)}>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span>{a.descripcion}</span>
@@ -71,6 +93,27 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
                         </td>
                         <td className="py-2 px-3">{a.categoria || ''}</td>
                         <td className="py-2 px-3">{a.unidadSalida}</td>
+                        <td className="py-2 px-3 text-right align-middle">
+                          {(hoverId === a.id && !incomplete && unitGhost !== null) ? (
+                            <div className="inline-flex flex-col items-end gap-0.5 text-xs text-slate-200">
+                              <div className="inline-flex items-center gap-1">
+                                <span className="text-slate-400">unit:</span>
+                                <span className="font-semibold">{format(unitGhost)}</span>
+                              </div>
+                              {typeof targetQty==='number' && targetQty>0 && (
+                                <div className="inline-flex items-center gap-1">
+                                  <span className="text-slate-400">total × {targetQty}:</span>
+                                  <span className="font-semibold text-emerald-300">{format(totalGhost || 0)}</span>
+                                </div>
+                              )}
+                              {targetUnit && a.unidadSalida && String(targetUnit).toLowerCase() !== String(a.unidadSalida).toLowerCase() && (
+                                <div className="text-[10px] text-amber-300">Unidad distinta: {a.unidadSalida} → {targetUnit}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="py-2 px-3 text-right">
                           <button onClick={() => onPick(a.id)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs">Seleccionar</button>
                         </td>

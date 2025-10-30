@@ -1,0 +1,1 @@
+tour: add optional step for calc add-suggested; auto-skip optional steps when target missing; tag buttons with data-tour calc-add-suggested

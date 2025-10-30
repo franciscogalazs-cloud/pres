@@ -183,6 +183,8 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
   // Selector de APU (mismo comportamiento que Presupuesto)
   const [selectApuOpen, setSelectApuOpen] = React.useState<{ open: boolean; subId: string | null }>({ open: false, subId: null });
 
+  // currentSub declarado más abajo, después de construir presupuestoRows
+
   const apusIndex = React.useMemo(() => {
     const idx: Record<string, any> = {};
     // Prioridad: APUs personalizados (pueden sobreescribir defaults)
@@ -1372,6 +1374,15 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
 
   // (El modo "Solo Fosa" fue retirado; mantener solo acción rápida en el menú de carga)
 
+  // Subpartida actualmente seleccionada para el selector de APU (depende de presupuestoRows)
+  const currentSub = React.useMemo(() => {
+    const sid = selectApuOpen.subId; if(!sid) return null;
+    const parent = presupuestoRows.find(r => (r.subRows||[]).some((s:any)=> s.id===sid));
+    if (!parent) return null;
+    const sub = (parent.subRows||[]).find((s:any)=> s.id===sid) || null;
+    return sub;
+  }, [selectApuOpen.subId, presupuestoRows]);
+
   return (
     <div className="container mx-auto p-4">
       <header className="bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-2xl px-6 py-6 shadow">
@@ -1758,6 +1769,11 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
               setSelectApuOpen({ open:false, subId:null });
             }}
             apus={Array.isArray(apus)? apus : []}
+            resources={resources as any}
+            apusIndex={apusIndex as any}
+            targetUnit={currentSub?.unidadSalida}
+            targetQty={Number(currentSub?.metrados || 0)}
+            fmt={fmtCl}
             onCreateNew={()=>{
               try{
                 const sid = selectApuOpen.subId; if(!sid){ setSelectApuOpen({open:false, subId:null}); return; }
