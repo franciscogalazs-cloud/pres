@@ -124,10 +124,7 @@ Notas importantes:
 Licencia: MIT (o la que definas).
 
 ## Módulos alternativos y flags
-- Variantes de app: `App.tsx` (principal) y `AppModular.tsx` (alternativa). Selección por flag de Vite:
-  - `VITE_APP_VARIANT=modular` para cargar `AppModular`.
-  - Por defecto usa `App`.
-- El resto de variantes legacy (AppFull/AppClean) se recomiendan migrar a feature flags o documentarlas; no se usan en build.
+Actualmente la app usa una sola variante (`App.tsx`). Se retiraron variantes legacy no utilizadas del build para simplificar el código.
 
 ## Hooks de offline y almacenamiento
 - `src/hooks/offline.ts` concentra hooks de conexión, cache, backup y datos offline.
