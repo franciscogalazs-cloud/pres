@@ -29,6 +29,7 @@ export interface TourStep {
   target: string; // CSS selector
   position: 'top' | 'bottom' | 'left' | 'right';
   action?: 'click' | 'hover' | 'none';
+  optional?: boolean; // si true, omitir automáticamente si no se encuentra el target
 }
 
 export const tourSteps: TourStep[] = [
@@ -57,6 +58,7 @@ export const tourSteps: TourStep[] = [
   { id: 'calc-util', title: 'Utilidad (%)', content: 'Define el margen de utilidad del proyecto.', target: '[data-tour="calc-util"]', position: 'left' },
   { id: 'calc-iva', title: 'IVA (%)', content: 'Incluye o ajusta el IVA para ver el total con impuestos.', target: '[data-tour="calc-iva"]', position: 'left' },
   { id: 'calc-presupuesto', title: 'Vista Presupuesto (Calculadora)', content: 'Ajusta subpartidas, agrega APUs sugeridos o búscalos manualmente.', target: '[data-tour="calc-presupuesto"]', position: 'top' },
+  { id: 'calc-add-suggested', title: 'Agregar APU sugerido', content: 'Cuando haya una sugerencia disponible, puedes agregarla con un clic.', target: '[data-tour="calc-add-suggested"]', position: 'left', optional: true },
   { id: 'calc-save', title: 'Guardar cálculo', content: 'Guarda este estado de la calculadora para retomarlo más tarde.', target: '[data-tour="calc-save"]', position: 'left' },
   { id: 'calc-load', title: 'Cargar guardado', content: 'Carga un preset (como “Fosa”) o cualquiera de tus guardados.', target: '[data-tour="calc-load"]', position: 'left' }
 ];
@@ -262,6 +264,7 @@ const TourOverlay: React.FC = () => {
   const [spotRect, setSpotRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const popRef = useRef<HTMLDivElement|null>(null);
   const [popStyle, setPopStyle] = useState<React.CSSProperties>({});
+  // no-op ref eliminado (no necesario)
 
   const currentStep = tourSteps[currentTourStep];
 
@@ -311,22 +314,36 @@ const TourOverlay: React.FC = () => {
 
         // Scroll a la vista el elemento objetivo
         try { element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' }); } catch {}
+        return true;
       }
+      return false;
     };
 
     // Try to find target immediately
-    findTarget();
-    
+  findTarget();
     // If not found, retry after a short delay
-    const timeout = setTimeout(findTarget, 100);
+    const t1 = window.setTimeout(() => {
+      const ok = findTarget();
+      if (!ok && currentStep.optional) {
+        // Paso opcional: omitir automáticamente tras un segundo reintento breve
+        nextTourStep();
+      }
+    }, 120);
+    // Un tercer intento un poco más tarde (por si render tardío)
+    const t2 = window.setTimeout(() => {
+      const ok = findTarget();
+      if (!ok && currentStep.optional) {
+        nextTourStep();
+      }
+    }, 400);
     // Recalcular en scroll/resize por si el layout cambia
     const onScroll = () => findTarget();
     const onResize = () => findTarget();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onResize);
     
-    return () => { clearTimeout(timeout); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); };
-  }, [isTourActive, currentStep]);
+    return () => { if (t1) clearTimeout(t1); if (t2) clearTimeout(t2); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); };
+  }, [isTourActive, currentStep, nextTourStep]);
 
   // Posicionar popover cerca del target según la posición preferida (modo anclado)
   useEffect(() => {

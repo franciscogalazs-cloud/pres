@@ -1618,6 +1618,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
                         disabled={!w.suggestedApuId}
                         onClick={() => handleAddSuggested(w.rowId)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-semibold shadow ${w.suggestedApuId ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-amber-800/40 text-amber-300 cursor-not-allowed'}`}
+                        data-tour="calc-add-suggested"
                       >
                         Agregar sugerido
                       </button>
@@ -1660,6 +1661,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
                         disabled={!w.suggestedApuId}
                         onClick={() => fixEmptySubUseSuggestion(w.parentId, w.subId)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-semibold shadow ${w.suggestedApuId ? 'bg-sky-600 hover:bg-sky-500 text-white' : 'bg-sky-800/40 text-sky-300 cursor-not-allowed'}`}
+                        data-tour="calc-add-suggested"
                       >
                         Agregar sugerido
                       </button>
