@@ -1398,6 +1398,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
               onClick={handleSaveAs}
               className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-semibold shadow focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
               title="Guardar con nombre"
+              data-tour="calc-save"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
@@ -1413,6 +1414,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
                 onClick={()=> setLoadMenuOpen(v=>!v)}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white text-sm font-semibold shadow focus:outline-none focus:ring-2 focus:ring-slate-400/60"
                 title="Cargar guardado"
+                data-tour="calc-load"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
                   <path d="M12 16V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -1495,6 +1497,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
               value={metros}
               onChange={(e) => setMetros(Number(e.target.value || 0))}
               className="mt-1 w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-slate-100 focus:outline-none focus:border-slate-500"
+              data-tour="calc-metros"
             />
             <div className="text-indigo-400 font-semibold text-center mt-1">{metros} m²</div>
             <input
@@ -1505,6 +1508,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
               value={metros}
               onChange={(e)=> setMetros(Number(e.target.value))}
               className="mt-3 w-full accent-indigo-500"
+              data-tour="calc-slider"
             />
           </div>
 
@@ -1539,6 +1543,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
             value={Math.round((gg||0)*1000)/10}
             onChange={(e)=> onChangeGG && onChangeGG(Math.max(0, Math.min(100, Number(e.target.value||0)))/100)}
             className="mt-2 w-full rounded-xl bg-slate-900 border border-purple-800/60 px-3 py-2 text-slate-100 focus:outline-none focus:border-purple-500"
+            data-tour="calc-gg"
           />
     </div>
     <div className="rounded-2xl border border-emerald-800 bg-emerald-900/20 p-4">
@@ -1551,6 +1556,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
             value={Math.round((util||0)*1000)/10}
             onChange={(e)=> onChangeUtil && onChangeUtil(Math.max(0, Math.min(100, Number(e.target.value||0)))/100)}
             className="mt-2 w-full rounded-xl bg-slate-900 border border-emerald-800/60 px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+            data-tour="calc-util"
           />
     </div>
     <div className="rounded-2xl border border-rose-800 bg-rose-900/20 p-4">
@@ -1563,6 +1569,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
             value={Math.round((iva||0)*1000)/10}
             onChange={(e)=> onChangeIVA && onChangeIVA(Math.max(0, Math.min(100, Number(e.target.value||0)))/100)}
             className="mt-2 w-full rounded-xl bg-slate-900 border border-rose-800/60 px-3 py-2 text-slate-100 focus:outline-none focus:border-rose-500"
+            data-tour="calc-iva"
           />
         </div>
       </div>
@@ -1671,7 +1678,7 @@ const Calculator: React.FC<CalculatorProps> = ({ gg, util, iva, apus = [], resou
           )}
 
           {/* Vista Presupuesto */}
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4" data-tour="calc-presupuesto">
             <h3 className="text-base font-semibold text-slate-100 mb-3">Vista Presupuesto</h3>
             <BudgetTable
               chapters={presupuestoChapters}

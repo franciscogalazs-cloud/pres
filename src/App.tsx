@@ -5400,7 +5400,7 @@ const App: React.FC = () => {
                 // Abrir modal para completar información del proyecto antes de crear o actualizar el stick
                 setShowProjectInfoModalForSave(true);
                 return;
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">💾 Guardar</button>
+              }} data-tour="save-button" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">💾 Guardar</button>
               <button onClick={()=>{
                 if(!confirm('¿Borrar TODO el presupuesto (capítulos y partidas)? Esta acción no se puede deshacer.')) return;
                 try{ localStorage.removeItem('apu-budget'); }catch{}
@@ -5419,7 +5419,7 @@ const App: React.FC = () => {
                     showNotification('Presupuesto borrado','info');
                   }
                 }catch{ showNotification('Presupuesto borrado','info'); }
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">🗑️ Borrar presupuesto</button>
+              }} data-tour="clear-budget" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">🗑️ Borrar presupuesto</button>
               
               </>
             )}
@@ -5429,9 +5429,9 @@ const App: React.FC = () => {
 
         {/* Tabs */}
         <div className="flex gap-2 bg-slate-800 p-1 rounded-2xl w-fit" data-tour="tabs">
-          <button onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`}>Biblioteca de APU</button>
-          <button onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`}>Presupuesto</button>
-          <button onClick={()=>setTab('calculadora')} className={`px-3 py-1 rounded-xl ${tab==='calculadora'?'bg-slate-900':'hover:bg-slate-700'}`}>Calculadora</button>
+          <button data-tour="tab-biblioteca" onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`}>Biblioteca de APU</button>
+          <button data-tour="tab-presupuesto" onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`}>Presupuesto</button>
+          <button data-tour="tab-calculadora" onClick={()=>setTab('calculadora')} className={`px-3 py-1 rounded-xl ${tab==='calculadora'?'bg-slate-900':'hover:bg-slate-700'}`}>Calculadora</button>
         </div>
 
         {/* Se eliminó la pestaña 'proyecto' y su UI asociada */}
