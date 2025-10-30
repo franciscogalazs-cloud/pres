@@ -2,6 +2,7 @@ import React from "react";
 import CurrencyInput from "./CurrencyInput";
 import { TrashIcon, PencilSquareIcon, DocumentDuplicateIcon, ChevronDownIcon, ChevronRightIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
 import { readAliasMap } from "../utils/match";
+import { useRegisterShortcuts, createShortcut } from "../contexts/ShortcutContext";
 
 type RowProps = {
   index: number;
@@ -27,6 +28,17 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
   const [subCollapsed, setSubCollapsed] = React.useState<Record<string, boolean>>({});
   // Consideramos "vacía" si no tiene subpartidas; los APUs solo deben mostrarse en subpartidas
   const isEmpty = Array.isArray(row.subRows) ? row.subRows.length === 0 : true;
+  const [active, setActive] = React.useState(false);
+
+  // Registrar atajos cuando la fila está activa (hover/focus)
+  useRegisterShortcuts(
+    `row-${row.id}`,
+    [
+      createShortcut('Delete', () => onDelete(row.id), 'Eliminar partida'),
+      ...(onDuplicate ? [createShortcut('d', () => onDuplicate(row.id!), 'Duplicar partida', { ctrl: true })] : []),
+    ],
+    active
+  );
 
   const getDisplayInfo = React.useCallback((apuId: string, apuObj: any): { pos: number | null; code: string | null } => {
     try {
@@ -64,7 +76,14 @@ export default function Row({ index, row, chapters, onPickApu, onAddSubRow, onUp
 
   return (
     <>
-  <tr className={`hover:bg-slate-800/60 text-xs whitespace-nowrap group ${isEmpty ? 'bg-amber-900/10 ring-1 ring-amber-700/50' : ''}`}>
+  <tr
+    className={`hover:bg-slate-800/60 text-xs whitespace-nowrap group ${isEmpty ? 'bg-amber-900/10 ring-1 ring-amber-700/50' : ''}`}
+    tabIndex={0}
+    onMouseEnter={() => setActive(true)}
+    onMouseLeave={() => setActive(false)}
+    onFocus={() => setActive(true)}
+    onBlur={() => setActive(false)}
+  >
       {/* # (visual, no editable) */}
       <td className="h-10 px-3 text-center w-10 tabular-nums align-middle">{index + 1}</td>
       {/* Descripción */}

@@ -17,6 +17,8 @@ import CurrencyInput from './components/CurrencyInput';
 import { PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon, PlusIcon } from '@heroicons/react/24/outline';
 import UserQuickModal from './components/ui/UserQuickModal';
 import BudgetTable from './components/BudgetTable';
+import { ShortcutHelpModal, useRegisterShortcuts, createShortcut } from './contexts/ShortcutContext';
+import { HelpPanel } from './hooks/help';
 // Nota: Se eliminaron ProjectInfoForm/UserForm/UsersTable al remover la pestaña Proyecto
 
 const App: React.FC = () => {
@@ -3200,6 +3202,21 @@ const App: React.FC = () => {
   // Biblioteca UI state
   const [libScope] = useState<'all'|'mine'>('all');
   const [libSearch, setLibSearch] = useState('');
+  const libSearchRef = React.useRef<HTMLInputElement|null>(null);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+
+  // Atajos globales: tabs y ayuda
+  useRegisterShortcuts('Global', [
+    createShortcut('1', () => setTab('biblioteca'), 'Ir a Biblioteca', { ctrl: true }),
+    createShortcut('2', () => setTab('presupuesto'), 'Ir a Presupuesto', { ctrl: true }),
+    createShortcut('F1', () => setShowShortcutHelp(true), 'Ayuda / Atajos'),
+    createShortcut('f', () => {
+      try {
+        setTab('biblioteca');
+        setTimeout(() => libSearchRef.current?.focus(), 0);
+      } catch {}
+    }, 'Buscar en biblioteca', { ctrl: true }),
+  ], true);
   const [libCategory, setLibCategory] = useState<string>('all');
   const [libHideIncomplete, setLibHideIncomplete] = useLocalStorage<boolean>('lib-hide-incomplete', false);
   const [showCreateApu, setShowCreateApu] = useState(false);
@@ -4890,6 +4907,9 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
       <NotificationToast notifications={notifications} onDismiss={dismissNotification} />
+      {/* Ayuda flotante y hoja rápida de atajos (F1) */}
+      <HelpPanel />
+      <ShortcutHelpModal isOpen={showShortcutHelp} onClose={()=> setShowShortcutHelp(false)} />
 
       {/* Modal para completar información del proyecto al guardar presupuesto */}
       <ProjectInfoModal
@@ -5365,7 +5385,7 @@ const App: React.FC = () => {
                     XLSX.writeFile(wb, `presupuesto-${slug||'export'}.xlsx`);
                   }
                 }catch{ /* noop */ }
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📥 Exportar Excel</button>
+              }} data-tour="export-excel" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📥 Exportar Excel</button>
               <button onClick={()=>{
                 try {
                   const fmtCl = (n:number)=> new Intl.NumberFormat('es-CL', { style:'currency', currency:'CLP', maximumFractionDigits:0 }).format(n||0);
@@ -5490,13 +5510,13 @@ const App: React.FC = () => {
                   setPrintPreviewHtml(html);
                   setPrintPreviewOpen(true);
                 } catch {}
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
+              }} data-tour="print-button" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
               <button onClick={()=>{
                 // Inicia flujo de nuevo presupuesto: modal de proyecto vacío y forzar 'create'
                 setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' });
                 setNewBudgetFlow(true);
                 setShowProjectInfoModalForSave(true);
-              }} className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PlusIcon className="h-4 w-4"/> Nuevo proyecto</button>
+              }} data-tour="new-project" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PlusIcon className="h-4 w-4"/> Nuevo proyecto</button>
               {/* Botón Importar partidas removido por solicitud */}
               <button onClick={()=>{
                 // Abrir modal para completar información del proyecto antes de crear o actualizar el stick
@@ -5530,7 +5550,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Tabs */}
-        <div className="flex gap-2 bg-slate-800 p-1 rounded-2xl w-fit">
+        <div className="flex gap-2 bg-slate-800 p-1 rounded-2xl w-fit" data-tour="tabs">
           <button onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`}>Biblioteca de APU</button>
           <button onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`}>Presupuesto</button>
           <button onClick={()=>setTab('calculadora')} className={`px-3 py-1 rounded-xl ${tab==='calculadora'?'bg-slate-900':'hover:bg-slate-700'}`}>Calculadora</button>
@@ -5545,7 +5565,7 @@ const App: React.FC = () => {
               <div className="flex flex-wrap gap-2 items-center">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-slate-400">Buscar:</span>
-                  <input value={libSearch} onChange={e=>setLibSearch(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sm" />
+                  <input ref={libSearchRef} data-tour="search-input" value={libSearch} onChange={e=>setLibSearch(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sm" />
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-slate-400">Categoría:</span>
@@ -5564,7 +5584,7 @@ const App: React.FC = () => {
                   <input type="checkbox" checked={libHideIncomplete} onChange={(e)=> setLibHideIncomplete(e.currentTarget.checked)} />
                   Ocultar incompletos
                 </label>
-                <button onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
+                <button data-tour="add-apu" onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
                 <button onClick={()=>setShowApuAssistant(true)} className="px-3 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-sm text-white">Asistente · APU desde texto</button>
                 <button onClick={()=> setCleanupOpen(true)} className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm text-white">👀 Revisar duplicados</button>
                 <button onClick={autoCleanupApus} className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-sm text-white">🧹 Depurar duplicados</button>
@@ -6499,7 +6519,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Vista desktop - Tabla por capítulo (nuevo componente presentacional) */}
-              <div className="hidden lg:block">
+              <div className="hidden lg:block" data-tour="budget-table">
                 <BudgetTable
                   chapters={chapters}
                   rows={rows}
