@@ -1,5 +1,6 @@
 # APU Presupuestos (Vite + React + TS + Tailwind)
 
+[![CI](https://github.com/franciscogalazs-cloud/pres/actions/workflows/ci.yml/badge.svg)](https://github.com/franciscogalazs-cloud/pres/actions/workflows/ci.yml)
 [![Deploy to GitHub Pages](https://github.com/franciscogalazs-cloud/pres/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/franciscogalazs-cloud/pres/actions/workflows/deploy-pages.yml)
 
 Prod: https://franciscogalazs-cloud.github.io/pres/
