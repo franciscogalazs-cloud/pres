@@ -266,6 +266,7 @@ const TourOverlay: React.FC = () => {
   const { isTourActive, currentTourStep, nextTourStep, prevTourStep, stopTour } = useHelp();
   const [targetElement, setTargetElement] = useState<HTMLElement | null>(null);
   const [highlightStyle, setHighlightStyle] = useState<React.CSSProperties>({});
+  const [spotRect, setSpotRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   const currentStep = tourSteps[currentTourStep];
 
@@ -277,14 +278,20 @@ const TourOverlay: React.FC = () => {
       if (element) {
         setTargetElement(element);
         const rect = element.getBoundingClientRect();
+        const padding = 8;
+        const top = rect.top - padding;
+        const left = rect.left - padding;
+        const width = rect.width + padding * 2;
+        const height = rect.height + padding * 2;
         setHighlightStyle({
           position: 'fixed',
-          top: rect.top - 8,
-          left: rect.left - 8,
-          width: rect.width + 16,
-          height: rect.height + 16,
-          zIndex: 1000
+          top,
+          left,
+          width,
+          height,
+          zIndex: 10001
         });
+        setSpotRect({ top, left, width, height });
       }
     };
 
@@ -306,14 +313,37 @@ const TourOverlay: React.FC = () => {
 
   return (
     <>
-      {/* Background overlay */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] bg-black/60"
-        onClick={stopTour}
-      />
+      {/* Background overlay con "hueco" alrededor del target */}
+      <div className="fixed inset-0 z-[9999] pointer-events-none" aria-hidden>
+        {/* Banda superior */}
+        <div
+          onClick={stopTour}
+          className="absolute left-0 right-0 bg-black pointer-events-auto"
+          style={{ top: 0, height: spotRect ? Math.max(0, spotRect.top) : '100%' as any }}
+        />
+        {spotRect && (
+          <>
+            {/* Banda izquierda */}
+            <div
+              onClick={stopTour}
+              className="absolute bg-black pointer-events-auto"
+              style={{ top: spotRect.top, left: 0, width: Math.max(0, spotRect.left), height: spotRect.height }}
+            />
+            {/* Banda derecha */}
+            <div
+              onClick={stopTour}
+              className="absolute bg-black pointer-events-auto"
+              style={{ top: spotRect.top, left: spotRect.left + spotRect.width, right: 0, height: spotRect.height }}
+            />
+            {/* Banda inferior */}
+            <div
+              onClick={stopTour}
+              className="absolute left-0 right-0 bg-black pointer-events-auto"
+              style={{ top: spotRect.top + spotRect.height, bottom: 0 }}
+            />
+          </>
+        )}
+      </div>
 
       {/* Highlight circle */}
       {targetElement && (
@@ -331,7 +361,7 @@ const TourOverlay: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[10000] w-full max-w-md px-4"
       >
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-600 p-6">
+        <div className="bg-white dark:bg-white text-slate-900 rounded-xl shadow-xl border border-slate-200 p-6 pointer-events-auto" role="dialog" aria-modal="true">
           <div className="flex items-start justify-between mb-4">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
               {currentStep.title}
@@ -422,7 +452,7 @@ export const HelpPanel: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black bg-opacity-50 z-50"
+              className="fixed inset-0 bg-black z-[9990]"
               onClick={() => setIsOpen(false)}
             />
             
@@ -430,7 +460,8 @@ export const HelpPanel: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white dark:bg-slate-800 rounded-xl shadow-xl z-51 w-full max-w-md mx-4"
+              className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white dark:bg-white text-slate-900 rounded-xl shadow-xl z-[10000] w-full max-w-md mx-4"
+              role="dialog" aria-modal="true"
             >
               <div className="p-6">
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">
