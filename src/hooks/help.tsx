@@ -107,6 +107,17 @@ export const HelpProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Disable background scroll while tour is active
+  useEffect(() => {
+    const el = document.documentElement;
+    if (!el) return;
+    const prev = el.style.overflow;
+    if (isTourActive) {
+      el.style.overflow = 'hidden';
+    }
+    return () => { el.style.overflow = prev; };
+  }, [isTourActive]);
+
   const contextValue = {
     isTooltipEnabled,
     setTooltipEnabled,
@@ -300,7 +311,7 @@ const TourOverlay: React.FC = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 z-[999]"
+        className="fixed inset-0 z-[9999] bg-black/60"
         onClick={stopTour}
       />
 
@@ -318,7 +329,7 @@ const TourOverlay: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[1001] w-full max-w-md px-4"
+        className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[10000] w-full max-w-md px-4"
       >
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-600 p-6">
           <div className="flex items-start justify-between mb-4">
