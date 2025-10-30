@@ -3,10 +3,10 @@ import SelectApuModal from './components/ui/SelectApuModal';
 import { apus as defaultApus } from './data/defaults';
 import Calculator from './components/Calculator';
 import { useNotifications } from './hooks/useNotifications';
-import { uid, fmt, normUnit } from './utils/formatters';
+import { uid, fmt } from './utils/formatters';
 import { readAliasMap, writeAliasMap, similarityScore, groupSimilarApus, isApuIncomplete } from './utils/match';
 import { applySynonyms } from './data/synonyms';
-import ApuCleanupModal from './components/ui/ApuCleanupModal';
+ 
 import { unitCost, unitCostBySection } from './utils/calculations';
 import { useResources } from './hooks/useResources';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -147,9 +147,37 @@ const App: React.FC = () => {
   // Guardar biblioteca con renumeración simple de códigos 01-XXX (si falta)
   const saveLibrary = React.useCallback((list: any[]) => {
     const arr = Array.isArray(list) ? list : [];
+    // Generador de IDs estables: si falta id, derivar de descripción + unidad; fallback a uid
+    const used = new Set<string>();
+    // Pre-marcar ids existentes para evitar colisiones
+    for (const apu of arr) { const id = String(apu?.id||'').trim(); if (id) used.add(id); }
+    const makeId = (apu: any, idx: number): string => {
+      try {
+        const raw = `${String(apu?.descripcion||'').trim()}_${String(apu?.unidadSalida||'').trim()}`.toLowerCase();
+        let base = raw
+          .normalize('NFD')
+          .replace(/\p{Diacritic}/gu, '')
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 48);
+        if (!base) base = `apu_${idx+1}`;
+        let candidate = `custom_${base}`;
+        let n = 1;
+        while (used.has(candidate)) { candidate = `custom_${base}_${n++}`; }
+        used.add(candidate);
+        return candidate;
+      } catch {
+        let candidate = `custom_${idx+1}`;
+        let n = 1;
+        while (used.has(candidate)) { candidate = `custom_${idx+1}_${n++}`; }
+        used.add(candidate);
+        return candidate;
+      }
+    };
     const next = arr.map((apu, idx) => {
       const codigo = apu?.codigo || `01-${String(idx + 1).padStart(3, '0')}`;
-      return { ...apu, codigo };
+      const id = String(apu?.id||'').trim() || makeId(apu, idx);
+      return { ...apu, id, codigo };
     });
     setCustomApus(next);
     try { localStorage.setItem('apu-library', JSON.stringify(next)); } catch {}
@@ -3220,7 +3248,7 @@ const App: React.FC = () => {
   const [libCategory, setLibCategory] = useState<string>('all');
   const [libHideIncomplete, setLibHideIncomplete] = useLocalStorage<boolean>('lib-hide-incomplete', false);
   const [showCreateApu, setShowCreateApu] = useState(false);
-  const [showApuAssistant, setShowApuAssistant] = useState(false);
+  
   const [showEditApu, setShowEditApu] = useState(false);
   const [apuEditing, setApuEditing] = useState<any|null>(null);
   // Expansión inline para edición estilo planilla
@@ -3654,7 +3682,7 @@ const App: React.FC = () => {
   };
 
   // Conteo de usos de APU en presupuesto (partidas y subpartidas)
-  const apuUsageCounts = useMemo(() => {
+  const _apuUsageCounts = useMemo(() => {
     const map = new Map<string, number>();
     try{
       for (const r of rows as any[]) {
@@ -4386,176 +4414,26 @@ const App: React.FC = () => {
     }
   };
 
-  // ===== Limpieza de biblioteca: duplicados e incompletos =====
-  const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [hasBackup, setHasBackup] = useState<boolean>(()=>{
-    try{ return !!localStorage.getItem('apu-library-backup'); }catch{ return false; }
-  });
-  const backupApusAndAliases = React.useCallback(()=>{
-    try{
-      // Evitar sobrescribir si ya existe un backup vigente
-      if(!localStorage.getItem('apu-library-backup')){
-        localStorage.setItem('apu-library-backup', JSON.stringify({ at: Date.now(), apus: allApus||[] }));
-      }
-      if(!localStorage.getItem('apu-alias-backup')){
-        const aliases = readAliasMap();
-        localStorage.setItem('apu-alias-backup', JSON.stringify({ at: Date.now(), aliases }));
-      }
-      setHasBackup(true);
-    }catch{ /* noop */ }
-  }, [allApus]);
-  const restoreBackup = React.useCallback(()=>{
-    try{
-      const libRaw = localStorage.getItem('apu-library-backup');
-      const aliasRaw = localStorage.getItem('apu-alias-backup');
-      if(!libRaw && !aliasRaw){ showNotification('No hay copia para deshacer','info'); return; }
-      if(libRaw){
-        try{
-          const parsed = JSON.parse(libRaw||'null')||{};
-          const apus = parsed.apus;
-          if(Array.isArray(apus)){ saveLibrary(apus); }
-        }catch{}
-        try{ localStorage.removeItem('apu-library-backup'); }catch{}
-      }
-      if(aliasRaw){
-        try{
-          const parsedA = JSON.parse(aliasRaw||'null')||{};
-          const aliases = parsedA.aliases;
-          if(aliases && typeof aliases==='object'){ writeAliasMap(aliases); }
-        }catch{}
-        try{ localStorage.removeItem('apu-alias-backup'); }catch{}
-      }
-      setHasBackup(false);
-      showNotification('Se restauró la biblioteca y alias previos','success');
-    }catch{ showNotification('No se pudo restaurar el respaldo','error'); }
-  }, [saveLibrary, showNotification]);
-  const handleMergeApus = React.useCallback((targetId: string, dupIds: string[], removeDup: boolean) => {
-    try{
-      // Respaldo previo la primera vez
-      backupApusAndAliases();
-      const aliases = readAliasMap();
-      const nextAliases = { ...(aliases||{}) } as Record<string,string>;
-      for(const d of dupIds){ nextAliases[d] = targetId; }
-      writeAliasMap(nextAliases);
+  // ===== Limpieza de biblioteca: funciones avanzadas removidas por simplificación de UI =====
 
-      if (removeDup) {
-        const keep = new Set([targetId]);
-        const next = (allApus||[]).filter(a => keep.has(a.id) || !dupIds.includes(a.id));
-        saveLibrary(next);
-      }
-      showNotification('Fusión de APUs completada','success');
-    }catch{ showNotification('No se pudo completar la fusión','error'); }
-  }, [allApus, saveLibrary, showNotification, backupApusAndAliases]);
-
-  // Limpieza automática: detectar grupos similares y fusionar manteniendo el mejor
-  const autoCleanupApus = React.useCallback(() => {
-    try{
+  // Migración puntual: asegurar que todos los APUs tengan id (para limpieza/fusión confiable)
+  useEffect(() => {
+    try {
+      const doneKey = 'apu-id-migration-v1';
+      if (localStorage.getItem(doneKey) === 'done') return;
       const list = Array.isArray(customApus) ? customApus : [];
-      if(list.length < 2){ showNotification('No hay suficientes APUs para analizar','info'); return; }
-      // Conteo de usos para preferir APUs más referenciados
-      const usage = new Map<string, number>();
-      const addUse = (id?:string) => { if(!id) return; usage.set(id, (usage.get(id)||0)+1); };
-      rows.forEach(r=>{
-        const ids:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
-        ids.forEach(addUse);
-        (r.subRows||[]).forEach((s:any)=> (Array.isArray(s?.apuIds)? s.apuIds: []).forEach(addUse));
-      });
-      // Detectar grupos por similitud (misma unidad)
-      const groups = groupSimilarApus(list, { threshold: 0.46, sameUnit: true });
-      if(!groups.length){ showNotification('No se detectaron duplicados','info'); return; }
-      let mergedGroups = 0; let removed = 0;
-      groups.forEach(g=>{
-        const members = g.ids.map(id => list.find(a=>a.id===id)).filter(Boolean) as any[];
-        if(members.length < 2) return;
-        // Scoring: preferido si está usado, está completo, y tiene más filas en secciones
-        const score = (a:any) => {
-          const use = usage.get(a.id)||0;
-          const complete = isApuIncomplete(a) ? 0 : 1;
-          const sec = (()=>{ try{ const s=a.secciones||{}; return ['materiales','equipos','manoObra','varios'].reduce((n,k)=> n + (Array.isArray(s[k])? s[k].length:0), 0); }catch{return 0;} })();
-          return use*3 + complete*2 + sec*0.1; // pesos simples
-        };
-        let target = members[0]; let best = score(target);
-        for(const m of members.slice(1)){
-          const sc = score(m); if(sc > best){ best = sc; target = m; }
-        }
-        const dupIds = g.ids.filter(id => id !== target.id);
-        if(dupIds.length){ mergedGroups++; removed += dupIds.length; handleMergeApus(target.id, dupIds, true); }
-      });
-      showNotification(`Depuración completada: ${mergedGroups} grupos fusionados, ${removed} duplicados eliminados`, 'success');
-    }catch{ showNotification('Error en la depuración automática', 'error'); }
-  }, [customApus, rows, handleMergeApus, showNotification]);
+      if (!list.length) { localStorage.setItem(doneKey, 'done'); return; }
+      const needs = list.some((a:any) => !a || !String(a?.id||'').trim());
+      if (!needs) { localStorage.setItem(doneKey, 'done'); return; }
+      // Re-guardar la biblioteca; saveLibrary asignará ids estables para los que faltan
+      saveLibrary(list);
+      localStorage.setItem(doneKey, 'done');
+      showNotification('Se normalizaron identificadores de APUs para limpieza', 'info');
+    } catch {/* noop */}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Migrar toda la biblioteca a secciones: si hay items y no hay secciones con filas, derivar; si hay secciones, limpiar items
-  const migrateApusToSections = React.useCallback(()=>{
-    try{
-      const list = Array.isArray(allApus)? allApus : [];
-      if(!list.length){ showNotification('Biblioteca vacía','info'); return; }
-      backupApusAndAliases();
-      const accLen = (arr:any)=> Array.isArray(arr)? arr.length: 0;
-      const hasRows = (s:any)=>{
-        try{
-          const known = ['materiales','equipos','manoObra','varios'];
-          if(known.some(k=> accLen(s?.[k])>0)) return true;
-          if(Array.isArray(s?.extras) && s.extras.some((ex:any)=> accLen(ex?.rows)>0)) return true;
-          for(const k of Object.keys(s||{})){
-            if(known.includes(k) || k==='extras' || k==='__meta' || k==='__titles') continue;
-            const v:any = s[k];
-            if(Array.isArray(v) && v.length>0) return true;
-            if(v && Array.isArray(v.rows) && v.rows.length>0) return true;
-          }
-          return false;
-        }catch{return false;}
-      };
-      const deriveFromItems = (apu:any)=>{
-        const base:any = { materiales:[], equipos:[], manoObra:[], varios:[], extras:[], __meta:{} };
-        const items:any[] = Array.isArray(apu?.items)? apu.items : [];
-        for(const it of items){
-          if(it?.tipo === 'coef' || it?.tipo === 'rendimiento'){
-            const r = (resources as any)[it.resourceId];
-            if(!r) continue;
-            const isCoef = it.tipo === 'coef';
-            const cantidad = isCoef ? (Number(it.coef||0) * (1 + Number(it.merma||0))) : (1 / Math.max(1, Number(it.rendimiento||1)));
-            const pu = Number(r.precio||0);
-            const row = { descripcion: r.nombre, unidad: r.unidad, cantidad, pu };
-            switch(r.tipo){
-              case 'material': base.materiales.push(row); break;
-              case 'equipo': base.equipos.push(row); break;
-              case 'mano_obra': base.manoObra.push(row); break;
-              default: base.varios.push(row); break;
-            }
-            continue;
-          }
-          if(it?.tipo === 'subapu'){
-            try{
-              const subId = String(it.apuRefId||'');
-              const sub = getApuByExactId? getApuByExactId(subId) : getApuById(subId);
-              const uc = unitCost(sub, resources).unit || 0;
-              const coef = it.coef ?? (it.rendimiento ? 1 / (Number(it.rendimiento)||1) : 1);
-              const row = { descripcion: `SubAPU ${subId}`, unidad: 'u', cantidad: coef, pu: uc };
-              base.varios.push(row);
-            }catch{}
-            continue;
-          }
-        }
-        return base;
-      };
-      let changed = 0; let derived = 0; let clearedOnly = 0;
-      const next = list.map((apu:any)=>{
-        const s = apu?.secciones || {};
-        const has = hasRows(s);
-        const hasItems = Array.isArray(apu?.items) && apu.items.length>0;
-        if(has && hasItems){ changed++; clearedOnly++; return { ...apu, items: undefined }; }
-        if(!has && hasItems){
-          const derivedSecs = deriveFromItems(apu);
-          changed++; derived++;
-          return { ...apu, secciones: derivedSecs, items: undefined };
-        }
-        return apu;
-      });
-      if(changed>0){ saveLibrary(next); showNotification(`Migración realizada: ${changed} APU(s) actualizados (${derived} derivados desde items, ${clearedOnly} limpiados)`, 'success'); }
-      else { showNotification('No había APUs para migrar','info'); }
-    }catch{ showNotification('Error al migrar APUs','error'); }
-  }, [allApus, resources, backupApusAndAliases, saveLibrary, showNotification, getApuByExactId, getApuById]);
+  // (removido) Migración de items a secciones
 
   // ===== Utilidades: creación automática de APU por similitud de nombre =====
   const _normTxt = React.useCallback((s:string)=> (s||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim(), []);
@@ -5585,13 +5463,6 @@ const App: React.FC = () => {
                   Ocultar incompletos
                 </label>
                 <button data-tour="add-apu" onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
-                <button onClick={()=>setShowApuAssistant(true)} className="px-3 py-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-sm text-white">Asistente · APU desde texto</button>
-                <button onClick={()=> setCleanupOpen(true)} className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm text-white">👀 Revisar duplicados</button>
-                <button onClick={autoCleanupApus} className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-sm text-white">🧹 Depurar duplicados</button>
-                <button onClick={()=>{ if(confirm('Esto migrará APUs a secciones (limpiará items cuando existan secciones y derivará secciones desde items cuando falten). ¿Continuar?')) migrateApusToSections(); }} className="px-3 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-sm text-white">🧽 Migrar a secciones</button>
-                {hasBackup && (
-                  <button onClick={restoreBackup} className="px-3 py-1.5 rounded-xl border border-amber-400 text-amber-200 hover:bg-amber-500/10 text-sm">↩️ Deshacer último</button>
-                )}
               </div>
             </div>
 
@@ -5624,7 +5495,7 @@ const App: React.FC = () => {
                       return (
                         <tr>
                           <td colSpan={6} className="py-6 px-3 text-center text-slate-300">
-                            No hay APUs para mostrar con los filtros actuales. Crea uno con “+ Crear nuevo APU” o usa el “Asistente · APU desde texto”.
+                            No hay APUs para mostrar con los filtros actuales. Crea uno con “+ Crear nuevo APU”.
                           </td>
                         </tr>
                       );
@@ -6035,44 +5906,8 @@ const App: React.FC = () => {
             </div>
 
             <CreateApuModal open={showCreateApu} onClose={()=>setShowCreateApu(false)} onSave={handleCreateApu} />
-            <ApuAssistantModal
-              open={showApuAssistant}
-              onClose={()=>setShowApuAssistant(false)}
-              onGenerate={(apu)=>{ handleCreateApu(apu); setShowApuAssistant(false); }}
-              builders={{
-                buildApuRadierH25ConMalla,
-                buildApuPavimentoExteriorH25_8cmMalla,
-                buildApuH25ObraVibradoM3,
-                buildApuExcavacionRetiroM3,
-                buildApuExcavacionZanjaManual,
-                buildApuRellenoCompactManual,
-                buildApuZapataCorridaEnZanja,
-                buildApuEnfierraduraKg,
-                buildApuCuradoHumedoM2,
-                buildApuImperCementicia2capasM2,
-                buildApuPinturaPiscina2manosM2,
-                buildApuTabiqueMetalconDoblePlaca,
-                buildApuCieloRasoYesoCarton,
-                buildApuAlbanileriaLadrilloComun,
-                buildApuMuroLadrillo,
-                buildApuEstructuraTechumbreMadera,
-                buildApuCubiertaZincFieltro,
-                buildApuRedHid_ValvulaBola50_u,
-                buildApuRedHid_PVC50_Tuberia_ml,
-              }}
-            />
+            
             <CreateApuModal open={showEditApu} onClose={()=>{setShowEditApu(false); setApuEditing(null);} } onSave={handleSaveEditApu} initial={apuEditing} />
-            <ApuCleanupModal
-              open={cleanupOpen}
-              apus={allApus as any}
-              resources={resources as any}
-              usageCounts={apuUsageCounts as any}
-              onShowUsages={(id)=> { setCleanupOpen(false); openUsageModal(id); }}
-              onClose={()=> setCleanupOpen(false)}
-              onMerge={(targetId, dupIds, removeDup)=> handleMergeApus(targetId, dupIds, removeDup)}
-              onEdit={(id)=> { setCleanupOpen(false); openApuDetail(id); }}
-              onDelete={(id)=> handleDeleteApu(id, { skipConfirm: true, silent: true })}
-            />
 
             {/* Modal: Ver usos de APU y reemplazo masivo */}
             {usageModal.open && (
@@ -7402,246 +7237,6 @@ function CreateApuModal({open, onClose, onSave, initial}:{open:boolean; onClose:
   );
 }
 
-function ApuAssistantModal({ open, onClose, onGenerate, builders }:{ open:boolean; onClose:()=>void; onGenerate:(apu:any)=>void; builders?: Record<string, any> }){
-  const [raw, setRaw] = useState('');
-  const [unit, setUnit] = useState('');
-  const [category, setCategory] = useState('');
-  const [desc, setDesc] = useState('');
-
-  const parseText = () => {
-    // Parser simple: líneas "Sección: ..." y luego filas "descripcion | unidad | cantidad | pu"
-    // Si no hay secciones, cae en "materiales"
-    const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  const apu:any = { descripcion: desc || 'APU sin título', unidadSalida: unit || 'm2', categoria: category || '', secciones: { materiales: [], equipos: [], manoObra: [], varios: [], extras: [] } };
-    
-
-    // Nuevo: detección de intención por prompt corto ("1 m3 hormigón", "radier 10 cm", "excavación", etc.)
-    const hasStructuredMarkers = (txt:string) => /[|;\t]|@|\$\s*\d/.test(txt);
-    const firstLine = lines[0] || '';
-    const intentText = (desc + ' ' + firstLine).toLowerCase().trim();
-    const extractQtyUnit = (t:string) => {
-      const m = t.match(/(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/]+)\b/);
-      return m ? { qty: Number(String(m[1]).replace(',', '.')), unit: (m[2]||'').toLowerCase() } : { qty: 1, unit: '' };
-    };
-    const tryBuildFromIntent = (t:string) => {
-      if(!t || hasStructuredMarkers(raw)) return null;
-      const n = t.normalize('NFD').replace(/\p{Diacritic}/gu,'');
-  const _incl = (w:string) => n.includes(w);
-      const hasAny = (...ws:string[]) => ws.some(w => n.includes(w));
-      // Selección por palabras clave (sin acentos)
-      // Hormigón / H-25 / radier / pavimento
-      if(hasAny('radier','contrapiso','platea','losa radier')) return builders?.buildApuRadierH25ConMalla?.() || null;
-      if((hasAny('pavimento','vereda','calzada','acera','pavi') && (hasAny('h25','h-25','h 25') || hasAny('8cm','8 cm')))){
-        return builders?.buildApuPavimentoExteriorH25_8cmMalla?.() || null;
-      }
-      if(hasAny('hormigon','concreto','h-25','h25','h 25')) return builders?.buildApuH25ObraVibradoM3?.() || null;
-      // Movimiento de tierras
-      if(hasAny('excavacion','excavar','excavaciones','zanjeo','zanja','zanjas') && hasAny('retiro','botadero','dispos','disposicion','camion','tolva','traslado','vertedero','acopio')) return builders?.buildApuExcavacionRetiroM3?.() || null;
-      if(hasAny('excavacion','excavar','excavaciones','zanjeo','zanja','zanjas')) return builders?.buildApuExcavacionZanjaManual?.() || null;
-      if(hasAny('relleno','rellenos') || hasAny('compact','compactacion','compactar','vibroplaca','apisonadora','pison','placa')) return builders?.buildApuRellenoCompactManual?.() || null;
-      if(hasAny('zapata','cimiento corrido','fundacion corrida')) return builders?.buildApuZapataCorridaEnZanja?.() || null;
-      // Acero / enfierradura
-      if(hasAny('enfierradura','armado','acero','fierro','barras','corrugado','armadura')) return builders?.buildApuEnfierraduraKg?.() || null;
-      // Terminaciones varias
-      if(hasAny('curado','curado humedo','cura')) return builders?.buildApuCuradoHumedoM2?.() || null;
-      if(hasAny('impermeabilizacion','hidrofugo','membrana cementicia','impermeabilizacion cementicia','sikatop')) return builders?.buildApuImperCementicia2capasM2?.() || null;
-      if(hasAny('piscina') && hasAny('pintura','revestimiento','epoxica','clorada')) return builders?.buildApuPinturaPiscina2manosM2?.() || null;
-      if(hasAny('tabique','tabiqueria','metalcon','drywall','yeso carton','durlock')) return builders?.buildApuTabiqueMetalconDoblePlaca?.() || null;
-      if((hasAny('cielo raso','cielo','plafon','cielo americano') && hasAny('yeso','carton','yeso carton'))) return builders?.buildApuCieloRasoYesoCarton?.() || null;
-      if(hasAny('muro','albanileria','ladrillo','aparejo')) return builders?.buildApuAlbanileriaLadrilloComun?.() || builders?.buildApuMuroLadrillo?.() || null;
-      if(hasAny('techumbre','cercha','cerchas','estructura techo')) return builders?.buildApuEstructuraTechumbreMadera?.() || null;
-      if(hasAny('cubierta','chapa','zinc','aluzinc','colorbond','plancha') && hasAny('zinc','chapa','aluzinc','plancha')) return builders?.buildApuCubiertaZincFieltro?.() || null;
-      // Redes
-      if(hasAny('valvula') && hasAny('bola','esfera')) return builders?.buildApuRedHid_ValvulaBola50_u?.() || null;
-      if((hasAny('tuberia','caneria','cañeria','pvc','caner') && hasAny('ø50','50mm','50 mm','dn50',' 50',' 050','50')) ) return builders?.buildApuRedHid_PVC50_Tuberia_ml?.() || null;
-      return null;
-    };
-    const maybeApu = tryBuildFromIntent(intentText);
-    if(maybeApu){
-      // Si el usuario puso unidad o la línea tiene una unidad al principio, respetarla
-      const { unit: parsedUnit } = extractQtyUnit(firstLine);
-      const outUnit = (unit || parsedUnit || maybeApu.unidadSalida || '').trim();
-      const outDesc = (desc || maybeApu.descripcion || 'APU generado').trim();
-      const outCat = (category || maybeApu.categoria || '').trim();
-      return { ...maybeApu, descripcion: outDesc, unidadSalida: outUnit || maybeApu.unidadSalida, categoria: outCat };
-    }
-
-    const guessSection = (descripcion:string, unidad:string): 'materiales'|'equipos'|'manoObra'|'varios' => {
-      const d = (descripcion||'').toLowerCase();
-      const u = (unidad||'').toLowerCase();
-      // Mano de obra: roles + unidades típicas HH/jornal
-      const moWords = ['maestro','ayudante','carpintero','yesero','pintor','albañil','topógrafo','topografo','operador','jornal','mano de obra','peón','peon'];
-      if (moWords.some(w=> d.includes(w)) || ['jornal','hh','hora-hombre','h-h','h/h'].some(x=>u.includes(x))) return 'manoObra';
-      // Varios: herramientas menores, misceláneos/imprevistos
-      if (d.includes('herramientas menores') || d.includes('misceláneos') || d.includes('miscelaneos') || d.includes('imprevisto') || d.includes('gastos varios') || d.includes('miscel')) return 'varios';
-      // Equipos: maquinaria/equipo + hora/día
-      const eqWords = ['retroexcavadora','bomba','betonera','vibrador','compactadora','andamio','grúa','grua','camión','camion','mixer','generador','equipo','pluma','martillo', 'cortadora', 'sierra'];
-      if (eqWords.some(w=> d.includes(w)) || (['hora','día','dia'].some(x=>u.includes(x)) && (d.includes('equipo') || d.includes('maquinaria')))) return 'equipos';
-      // Materiales por defecto
-      return 'materiales';
-    };
-
-    const toNumber = (s:string)=> Number(String(s||'').replace(/[^0-9,.-]/g,'').replace(/\.(?=.*\.)/g,'').replace(',', '.')) || 0;
-    const guessCategory = (text:string) => {
-      const t = (text||'').toLowerCase();
-      const rules: Array<[string, string[]]> = [
-        ['Obra gruesa', ['excav', 'hormig', 'encofr', 'acero', 'radier', 'zapata', 'losa', 'moldaj', 'albañil', 'albanil', 'relleno', 'compactación', 'compactacion']],
-        ['Terminaciones', ['pintura', 'cerám', 'ceram', 'porcelanato', 'tabique', 'yeso', 'cielo', 'piso', 'guardapolvo', 'fragüe', 'fragüe', 'masilla']],
-        ['Techumbre', ['techumbre', 'cubierta', 'teja', 'zinc', 'fieltro', 'cumbrera', 'canaleta', 'bajada', 'entretechos']],
-        ['Instalaciones sanitarias', ['sanitaria', 'red hídr', 'red hid', 'pvc', 'desag', 'biodigestor', 'alcant']],
-        ['Instalaciones eléctricas', ['eléctrica', 'electrica', 'enchufe', 'cable', 'tablero', 'breaker', 'te1', 'sec']],
-        ['Fachada', ['fachada', 'revestimiento exterior', 'fibrocemento', 'siding']],
-        ['Servicios', ['trámite', 'tramite', 'permiso', 'dom', 'cálculo', 'calculo', 'recepción', 'recepcion']]
-      ];
-      for(const [cat, kws] of rules){ if(kws.some(k=> t.includes(k))) return cat; }
-      return '';
-    };
-    const parseFreeForm = (line:string) => {
-      // 1) Formato: "1 m3 Hormigón H-25 @ $188.836"
-      let m = line.match(/^(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/%]+)\s+(.+?)\s*@\s*\$?\s*([\d\.,]+)/i);
-      if(m){
-        const cantidad = toNumber(m[1]);
-        const unidad = (m[2]||'').trim();
-        const descripcion = (m[3]||'').trim();
-        const pu = toNumber(m[4]);
-        return { descripcion, unidad, cantidad, pu };
-      }
-      // 2) Formato: "Hormigón H-25 1 m3 $188.836"
-      m = line.match(/^(.+?)\s+(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/%]+)\s*\$?\s*([\d\.,]+)$/i);
-      if(m){
-        const descripcion = (m[1]||'').trim();
-        const cantidad = toNumber(m[2]);
-        const unidad = (m[3]||'').trim();
-        const pu = toNumber(m[4]);
-        return { descripcion, unidad, cantidad, pu };
-      }
-      // 3) Formato: "Cemento 25 kg | saco | 14 | 4790" (ya cubierto por split) o "Cemento 25 kg 14 sacos 4790"
-      m = line.match(/^(.+?)\s+(\d+(?:[\.,]\d+)?)\s*([a-zA-Záéíóúüñ°²³\/%]+)s?\b\s+([\d\.,]+)$/i);
-      if(m){
-        const descripcion = (m[1]||'').trim();
-        const cantidad = toNumber(m[2]);
-        const unidad = (m[3]||'').trim();
-        const pu = toNumber(m[4]);
-        return { descripcion, unidad, cantidad, pu };
-      }
-      // 4) Fallback: sólo descripción → cantidad 1, pu 0
-      if(line.length>0){
-        return { descripcion: line, unidad: '', cantidad: 1, pu: 0 };
-      }
-      return null;
-    };
-    let _current: 'materiales'|'equipos'|'manoObra'|'varios' = 'materiales';
-    for(const line of lines){
-      const secMatch = line.toLowerCase().match(/^(material(es)?|equipo(s)?|mano\s*obra|varios)\s*[:：-]/i);
-      if(secMatch){
-        const tag = secMatch[1].toLowerCase();
-        if(tag.startsWith('mater')) _current = 'materiales';
-        else if(tag.startsWith('equipo')) _current = 'equipos';
-        else if(tag.startsWith('mano')) _current = 'manoObra';
-        else _current = 'varios';
-        continue;
-      }
-      const parts = line.split(/\s*\|\s*|\t|;|,/); // soporta "|", tab, ";" o ","
-      if(parts.length>=3 && parts[0] && parts[1]){
-        const [d,u,c,pu] = parts;
-        const row = {
-          descripcion: (d||'').trim(),
-          unidad: (u||'').trim() || '',
-          cantidad: toNumber(String(c||0)),
-          pu: toNumber(String(pu||0))
-        };
-        if(row.descripcion){
-          const sec = guessSection(row.descripcion, row.unidad);
-          (apu.secciones[sec] as any[]).push(row);
-        }
-        continue;
-      }
-      const ff = parseFreeForm(line);
-      if(ff && ff.descripcion){
-        const sec = guessSection(ff.descripcion, ff.unidad);
-        (apu.secciones[sec] as any[]).push(ff);
-      }
-    }
-    // Inferir categoría si no se especificó
-    if(!String(category||'').trim()){
-      const textBlob = [desc, ...lines].filter(Boolean).join(' \n ');
-      const cat = guessCategory(textBlob);
-      if(cat) apu.categoria = cat;
-    }
-    // Inferir unidad de salida si el usuario no la especificó
-    if(!String(unit||'').trim()){
-      const rowsAll: any[] = [
-        ...(apu.secciones.materiales||[]),
-        ...(apu.secciones.equipos||[]),
-        ...(apu.secciones.manoObra||[]),
-        ...(apu.secciones.varios||[]),
-        ...((apu.secciones.extras||[]).flatMap((e:any)=> e?.rows||[]))
-      ];
-      const freq: Record<string,{n:number, repr:string}> = {};
-      for(const r of rowsAll){
-        const u = (r?.unidad||'').trim(); if(!u) continue;
-        const k = normUnit(u);
-        if(!freq[k]) freq[k] = { n:0, repr: u };
-        freq[k].n++;
-      }
-      const best = Object.values(freq).sort((a,b)=> b.n - a.n)[0]?.repr;
-      if(best) apu.unidadSalida = best;
-    }
-    return apu;
-  };
-
-  return (
-    <Modal open={open} title="Asistente: Generar APU desde texto" onClose={onClose}>
-      <div className="grid gap-3">
-        <div className="grid md:grid-cols-3 gap-3">
-          <label className="text-sm text-slate-300 grid gap-1">
-            <span>Descripción APU</span>
-            <input className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={desc} onChange={e=>setDesc(e.target.value)} />
-          </label>
-          <label className="text-sm text-slate-300 grid gap-1">
-            <span>Unidad salida</span>
-            {(()=>{
-              const commonUnits: string[] = ['m', 'm2', 'm3', 'kg', 'u', 'jornal', 'hora', 'día', 'ml', 'cm', 'mm'];
-              const units: string[] = Array.from(new Set([unit, ...commonUnits].map(s=>String(s||'').trim()).filter(Boolean))).sort();
-              const listId = 'assist-apu-units';
-              return (
-                <>
-                  <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={unit} onChange={e=>setUnit(e.target.value)} />
-                  <datalist id={listId}>
-                    {units.map((u:string)=> (<option key={u} value={u} />))}
-                  </datalist>
-                </>
-              );
-            })()}
-          </label>
-          <label className="text-sm text-slate-300 grid gap-1">
-            <span>Categoría</span>
-            {(()=>{
-              const commonCats: string[] = ['Obra gruesa','Terminaciones','Techumbre','Instalaciones sanitarias','Instalaciones eléctricas','Fachada','Servicios'];
-              const cats: string[] = Array.from(new Set([category, ...commonCats].map(s=>String(s||'').trim()).filter(Boolean))).sort();
-              const listId = 'assist-apu-cats';
-              return (
-                <>
-                  <input list={listId} className="bg-slate-800 border border-transparent focus:border-transparent focus:ring-0 rounded-xl p-2" value={category} onChange={e=>setCategory(e.target.value)} />
-                  <datalist id={listId}>
-                    {cats.map((c:string)=> (<option key={c} value={c} />))}
-                  </datalist>
-                </>
-              );
-            })()}
-          </label>
-        </div>
-        <label className="text-sm text-slate-300 grid gap-1">
-            <span>Pega tu texto (una fila por línea) o escribe un prompt corto. Ejemplos rápidos: "1 m3 hormigón", "radier 10 cm", "excavación", "enfierradura". También soporta formatos: "descripcion | unidad | cantidad | pu" o libre tipo "1 m3 Hormigón H-25 @ $188.836". Auto-clasifica filas y sugiere Categoría por palabras clave; puedes forzar secciones con "Materiales:", "Equipos:", "Mano Obra:", "Varios:".</span>
-          <textarea className="min-h-[220px] bg-slate-900 border border-slate-700 rounded-xl p-2 font-mono text-xs" value={raw} onChange={e=>setRaw(e.target.value)} placeholder={"Materiales:\nCemento 25 kg | saco | 14 | 4790\nArena a granel | m3 | 0.563 | 32900\n\nMano Obra:\nMaestro | m3 | 1 | 12500\nAyudante | m3 | 1 | 7300"} />
-        </label>
-        <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-          <button onClick={()=>{ const apu = parseText(); onGenerate(apu); }} className="px-3 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-white">Generar APU</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
+// ApuAssistantModal eliminado deliberadamente del bundle para simplificar UI.
 
 // (Removido) Selector compacto para proyectos guardados: ya no se usa; la carga se hace al seleccionar un proyecto.

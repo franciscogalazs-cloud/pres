@@ -184,6 +184,36 @@
 				"$eslint-stylish"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build project",
+			"type": "shell",
+			"command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"npm run build\"",
+			"group": "build"
+		},
+		{
+			"label": "Build project",
+			"type": "shell",
+			"command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"npm run build\"",
+			"group": "build"
+		},
+		{
+			"label": "Build project",
+			"type": "shell",
+			"command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"npm run build\"",
+			"group": "build"
+		},
+		{
+			"label": "Build project",
+			"type": "shell",
+			"command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"npm run build\"",
+			"group": "build"
+		},
+		{
+			"label": "Build project",
+			"type": "shell",
+			"command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"npm run build\"",
+			"group": "build"
 		}
 	]
 }

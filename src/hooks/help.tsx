@@ -278,7 +278,7 @@ const TourOverlay: React.FC = () => {
       if (element) {
         setTargetElement(element);
         const rect = element.getBoundingClientRect();
-        const padding = 8;
+  const padding = 12;
         const top = rect.top - padding;
         const left = rect.left - padding;
         const width = rect.width + padding * 2;
@@ -351,7 +351,7 @@ const TourOverlay: React.FC = () => {
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           style={highlightStyle}
-          className="rounded-lg border-2 border-sky-400 shadow-lg shadow-sky-400/20 pointer-events-none"
+          className="rounded-2xl border border-sky-300 shadow-lg shadow-sky-300/20 pointer-events-none"
         />
       )}
 

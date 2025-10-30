@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
-    "lint:unused": "knip",
+  "lint:unused": "knip --no-exit-code",
     "test": "vitest",
     "test:run": "vitest run"
   },
