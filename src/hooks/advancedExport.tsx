@@ -660,6 +660,8 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 onClick={onClose}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 disabled={isExporting}
+                title="Cerrar"
+                aria-label="Cerrar"
               >
                 ✕
               </button>
@@ -793,8 +795,10 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                     <button
                       onClick={() => setOptions({ ...options, annexes: [...(options.annexes||[]), { title: '', href: '' }] })}
                       className="rounded-lg bg-slate-200 px-2 py-1 text-xs hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                      title="Agregar anexo"
+                      aria-label="Agregar anexo"
                     >
-                      ➕ Añadir
+                      ➕ Agregar
                     </button>
                   </div>
                   <div className="space-y-2">
@@ -979,12 +983,16 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                   <button
                     onClick={onClose}
                     className="flex-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 py-2 px-4 rounded-lg font-medium transition-colors"
+                    title="Cancelar"
+                    aria-label="Cancelar"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={handleExport}
                     className="flex-1 bg-sky-500 hover:bg-sky-600 text-white py-2 px-4 rounded-lg font-medium transition-colors"
+                    title={`Exportar ${formatLabels[options.format]}`}
+                    aria-label={`Exportar ${formatLabels[options.format]}`}
                   >
                     Exportar {formatLabels[options.format]}
                   </button>

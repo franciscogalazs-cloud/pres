@@ -102,7 +102,7 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
         >
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Importar CSV</h2>
-            <button onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700">✖️</button>
+            <button onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-700" title="Cerrar" aria-label="Cerrar">✖️</button>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -182,8 +182,8 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({ isOpen, onClos
           {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
 
           <div className="mt-4 flex justify-end gap-2">
-            <button onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700">Cancelar</button>
-            <button onClick={handleImport} disabled={!canImport} className={`rounded-xl px-4 py-2 border ${canImport ? 'border-slate-600 hover:bg-slate-700/30' : 'border-slate-600/40 cursor-not-allowed opacity-60'}`}>Importar</button>
+            <button onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700" title="Cancelar" aria-label="Cancelar">Cancelar</button>
+            <button onClick={handleImport} disabled={!canImport} className={`rounded-xl px-4 py-2 border ${canImport ? 'border-slate-600 hover:bg-slate-700/30' : 'border-slate-600/40 cursor-not-allowed opacity-60'}`} title="Importar" aria-label="Importar">Importar</button>
           </div>
         </motion.div>
       </motion.div>

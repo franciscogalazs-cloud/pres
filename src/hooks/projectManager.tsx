@@ -397,6 +397,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             onToggleFavorite();
           }}
           className="ml-2 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+          title={isFavorite ? "Quitar de favoritos" : "Marcar como favorito"}
+          aria-label={isFavorite ? "Quitar de favoritos" : "Marcar como favorito"}
         >
           <span className={`text-lg ${isFavorite ? 'text-red-500' : 'text-slate-400'}`}>
             {isFavorite ? '❤️' : '🤍'}
@@ -462,6 +464,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
               onEdit();
             }}
             className="px-3 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 text-sm rounded-lg transition-colors"
+            title="Editar proyecto"
+            aria-label="Editar proyecto"
           >
             ✏️ Editar
           </button>
@@ -472,6 +476,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             onExport();
           }}
           className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+          title="Exportar proyecto"
+          aria-label="Exportar proyecto"
         >
           📤 Exportar
         </button>
@@ -481,6 +487,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             onDelete();
           }}
           className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
+          title="Eliminar proyecto"
+          aria-label="Eliminar proyecto"
         >
           🗑️
         </button>
@@ -590,12 +598,16 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                   type="button"
                   onClick={onClose}
                   className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  title="Cancelar"
+                  aria-label="Cancelar"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                  title="Crear proyecto"
+                  aria-label="Crear proyecto"
                 >
                   Crear Proyecto
                 </button>

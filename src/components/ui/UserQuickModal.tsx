@@ -41,12 +41,12 @@ export const UserQuickModal: React.FC<Props> = ({ open, initial, onClose, onSave
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 text-slate-100 shadow-2xl border border-slate-700">
+      <div className="w-full max-w-md rounded-2xl bg-slate-900 text-slate-100 shadow-2xl border border-slate-700 max-h-[90vh] grid grid-rows-[auto,1fr,auto] overflow-hidden">
         <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
           <h2 className="text-base font-semibold">Usuario</h2>
-          <button onClick={onClose} aria-label="Cerrar" className="text-slate-400 hover:text-slate-200">×</button>
+             <button onClick={onClose} aria-label="Cerrar" title="Cerrar" className="text-slate-400 hover:text-slate-200">×</button>
         </header>
-        <div className="p-5 grid gap-3">
+        <div className="p-5 grid gap-3 overflow-y-auto">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 grid gap-1">
             Nombre
             <input className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500" value={v.nombre||''} onChange={change('nombre')} />
@@ -89,9 +89,9 @@ export const UserQuickModal: React.FC<Props> = ({ open, initial, onClose, onSave
             </select>
           </label>
         </div>
-        <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/30">Cerrar</button>
-          <button type="button" onClick={()=> onSave(v)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700/30">Guardar</button>
+        <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800 sticky bottom-0 bg-slate-900">
+             <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/30" title="Cerrar" aria-label="Cerrar">Cerrar</button>
+             <button type="button" onClick={()=> onSave(v)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700/30" title="Guardar usuario" aria-label="Guardar usuario">Guardar</button>
         </footer>
       </div>
     </div>

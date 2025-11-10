@@ -46,6 +46,7 @@ export const ProjectInfoModal: React.FC<ProjectInfoModalProps> = ({
             onClick={onClose}
             className="text-slate-400 transition hover:text-slate-200"
             aria-label="Cerrar"
+            title="Cerrar"
           >
             ×
           </button>
@@ -127,12 +128,16 @@ export const ProjectInfoModal: React.FC<ProjectInfoModalProps> = ({
               type="button"
               onClick={onClose}
               className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700/30"
+              title="Cerrar"
+              aria-label="Cerrar"
             >
               Cerrar
             </button>
             <button
               type="submit"
               className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700/30"
+              title="Guardar proyecto"
+              aria-label="Guardar proyecto"
             >
               Guardar
             </button>

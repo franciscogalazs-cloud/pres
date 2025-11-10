@@ -271,12 +271,16 @@ export const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ className }) => 
               URL.revokeObjectURL(url);
             }}
             className="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+            title="Exportar analítica en JSON"
+            aria-label="Exportar analítica en JSON"
           >
             Exportar JSON
           </button>
           <button
             onClick={clearAnalytics}
             className="px-3 py-1 text-xs rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition"
+            title="Limpiar eventos de analítica"
+            aria-label="Limpiar eventos de analítica"
           >
             Limpiar
           </button>

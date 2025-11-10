@@ -342,6 +342,8 @@ export const CollabSidebar: React.FC<{ isOpen: boolean; onClose: () => void }> =
             <button
               onClick={onClose}
               className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white"
+              title="Cerrar panel"
+              aria-label="Cerrar panel"
             >
               Cerrar
             </button>
@@ -390,6 +392,8 @@ export const CollabSidebar: React.FC<{ isOpen: boolean; onClose: () => void }> =
                   }
                 }}
                 className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                title="Enviar comentario"
+                aria-label="Enviar comentario"
               >
                 Enviar
               </button>
@@ -398,6 +402,8 @@ export const CollabSidebar: React.FC<{ isOpen: boolean; onClose: () => void }> =
               <button
                 onClick={clearComments}
                 className="mt-2 text-xs text-slate-500 hover:text-slate-700"
+                title="Limpiar comentarios"
+                aria-label="Limpiar comentarios"
               >
                 Limpiar comentarios
               </button>

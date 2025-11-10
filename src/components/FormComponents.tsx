@@ -98,6 +98,8 @@ export const Seg: React.FC<SegProps> = React.memo(({
           ? 'bg-slate-900 border-slate-600' 
           : 'bg-slate-800 border-slate-700 hover:bg-slate-700'
       } ${className}`}
+      title={on ? 'Opción seleccionada' : 'Seleccionar opción'}
+      aria-label={on ? 'Opción seleccionada' : 'Seleccionar opción'}
     >
       {children}
     </button>
@@ -140,6 +142,8 @@ export const Preview: React.FC<PreviewProps> = React.memo(({
             ? 'bg-green-600 text-white' 
             : 'bg-slate-800 hover:bg-slate-700'
         }`}
+        title="Usar en metrados"
+        aria-label="Usar en metrados"
       >
         {justUsed ? '✓ Aplicado' : 'Usar en Metrados'}
       </button>

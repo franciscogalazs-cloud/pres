@@ -18,7 +18,7 @@ export const UserCreationModal: React.FC<UserCreationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-xl rounded-xl bg-white shadow-xl">
+      <div className="w-full max-w-xl rounded-xl bg-white shadow-xl max-h-[90vh] grid grid-rows-[auto,1fr] overflow-hidden">
         <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-800">Creación de Usuarios</h2>
           <button
@@ -26,12 +26,13 @@ export const UserCreationModal: React.FC<UserCreationModalProps> = ({
             onClick={onClose}
             className="text-slate-400 transition hover:text-slate-600"
             aria-label="Cerrar"
+            title="Cerrar"
           >
             ×
           </button>
         </header>
 
-        <form onSubmit={onSubmit} className="space-y-4 px-6 py-6">
+        <form onSubmit={onSubmit} className="space-y-4 px-6 py-6 overflow-y-auto">
           <div className="grid gap-3">
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Nombre
@@ -84,17 +85,21 @@ export const UserCreationModal: React.FC<UserCreationModalProps> = ({
             </label>
           </div>
 
-          <footer className="flex items-center justify-end gap-3 pt-2">
+          <footer className="flex items-center justify-end gap-3 pt-2 sticky bottom-0 bg-white py-4">
             <button
               type="button"
               onClick={onClose}
               className="rounded border border-red-500 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+              title="Cerrar"
+              aria-label="Cerrar"
             >
               Cerrar
             </button>
             <button
               type="submit"
               className="rounded border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-100 transition hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="Guardar usuario"
+              aria-label="Guardar usuario"
             >
               Guardar
             </button>

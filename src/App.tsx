@@ -3,8 +3,8 @@ import SelectApuModal from './components/ui/SelectApuModal';
 import { apus as defaultApus } from './data/defaults';
 import Calculator from './components/Calculator';
 import { useNotifications } from './hooks/useNotifications';
-import { uid, fmt } from './utils/formatters';
-import { readAliasMap, writeAliasMap, similarityScore, groupSimilarApus, isApuIncomplete } from './utils/match';
+import { uid, fmt, normUnit } from './utils/formatters';
+import { readAliasMap, writeAliasMap, similarityScore, groupSimilarApus, isApuIncomplete, isApuIncompleteDetail } from './utils/match';
 import { applySynonyms } from './data/synonyms';
  
 import { unitCost, unitCostBySection } from './utils/calculations';
@@ -14,7 +14,7 @@ import { ProjectInfoModal } from './components/ui/ProjectInfoModal';
 // Eliminado efecto glitch y logo
 import { NotificationToast } from './components/NotificationToast';
 import CurrencyInput from './components/CurrencyInput';
-import { PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { PrinterIcon, TrashIcon, PencilSquareIcon, UserPlusIcon, PlusIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import UserQuickModal from './components/ui/UserQuickModal';
 import BudgetTable from './components/BudgetTable';
 import { ShortcutHelpModal, useRegisterShortcuts, createShortcut } from './contexts/ShortcutContext';
@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const { notifications, showNotification, dismissNotification } = useNotifications();
   // Estado de pestañas (Proyecto eliminado)
   const [tab, setTab] = useState<'biblioteca'|'presupuesto'|'calculadora'>('presupuesto');
+  
 
   // Utilidad local para capitalizar títulos (usado en tooltips del header)
   const titleCase = (s?: string): string => {
@@ -4580,6 +4581,7 @@ const App: React.FC = () => {
   const [pendingAssignRowId, setPendingAssignRowId] = useState<string|null>(null);
   // Stick: Planillas (presets)
   const [planillaSelect, setPlanillaSelect] = useState<string>('');
+  const planillaSelectRef = useRef<HTMLSelectElement|null>(null);
   const [planillaModalOpen, setPlanillaModalOpen] = useState<boolean>(false);
   const [planillaPending, setPlanillaPending] = useState<string>('');
   const [planillaMode, setPlanillaMode] = useState<'replace'|'append'>('replace');
@@ -4629,7 +4631,8 @@ const App: React.FC = () => {
           const sub = r.subRows[idx];
           const current: string[] = (sub.apuIds && sub.apuIds.length) ? sub.apuIds : [];
           const nextIds = current.includes(apuId)? current : [...current, apuId];
-          const newSubs = [...r.subRows]; newSubs[idx] = { ...sub, apuIds: nextIds };
+          // Al cambiar los APUs asociados, limpiamos overrides para recalcular PU y Total
+          const newSubs = [...r.subRows]; newSubs[idx] = { ...sub, apuIds: nextIds, overrideUnitPrice: undefined, overrideTotal: undefined };
           return { ...r, subRows: newSubs };
         }
       }
@@ -4986,8 +4989,10 @@ const App: React.FC = () => {
                 <button
                   onClick={()=>{ try{ const iw = previewIframeRef.current?.contentWindow as any; iw?.focus(); iw?.print(); }catch{} }}
                   className="px-3 py-1 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-white text-xs"
+                  title="Imprimir"
+                  aria-label="Imprimir"
                 >Imprimir</button>
-                <button onClick={()=> setPrintPreviewOpen(false)} className="px-3 py-1 rounded-xl border border-slate-600 text-xs">Cerrar</button>
+                <button onClick={()=> setPrintPreviewOpen(false)} className="px-3 py-1 rounded-xl border border-slate-600 text-xs" title="Cerrar" aria-label="Cerrar">Cerrar</button>
               </div>
             </div>
             <div className="overflow-hidden">
@@ -5017,7 +5022,7 @@ const App: React.FC = () => {
             <h1 className="text-4xl font-extrabold tracking-tight text-slate-100">PRESUPUESTO</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {tab === 'presupuesto' && (
+            {tab === 'presupuesto' && false && (
               <>
 
               <button onClick={async ()=>{
@@ -5263,7 +5268,7 @@ const App: React.FC = () => {
                     XLSX.writeFile(wb, `presupuesto-${slug||'export'}.xlsx`);
                   }
                 }catch{ /* noop */ }
-              }} data-tour="export-excel" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">📥 Exportar Excel</button>
+              }} data-tour="export-excel" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs" title="Exportar a Excel" aria-label="Exportar a Excel">📥 Exportar Excel</button>
               <button onClick={()=>{
                 try {
                   const fmtCl = (n:number)=> new Intl.NumberFormat('es-CL', { style:'currency', currency:'CLP', maximumFractionDigits:0 }).format(n||0);
@@ -5388,21 +5393,21 @@ const App: React.FC = () => {
                   setPrintPreviewHtml(html);
                   setPrintPreviewOpen(true);
                 } catch {}
-              }} data-tour="print-button" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
+              }} data-tour="print-button" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1" title="Vista previa e imprimir" aria-label="Vista previa e imprimir"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
               <button onClick={()=>{
                 // Inicia flujo de nuevo presupuesto: modal de proyecto vacío y forzar 'create'
                 setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' });
                 setNewBudgetFlow(true);
                 setShowProjectInfoModalForSave(true);
-              }} data-tour="new-project" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1"><PlusIcon className="h-4 w-4"/> Nuevo proyecto</button>
+              }} data-tour="new-project" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs inline-flex items-center gap-1" title="Nuevo proyecto" aria-label="Nuevo proyecto"><PlusIcon className="h-4 w-4"/> Nuevo proyecto</button>
               {/* Botón Importar partidas removido por solicitud */}
               <button onClick={()=>{
                 // Abrir modal para completar información del proyecto antes de crear o actualizar el stick
                 setShowProjectInfoModalForSave(true);
                 return;
-              }} data-tour="save-button" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">💾 Guardar</button>
+              }} data-tour="save-button" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs" title="Guardar presupuesto" aria-label="Guardar presupuesto">💾 Guardar</button>
               <button onClick={()=>{
-                if(!confirm('¿Borrar TODO el presupuesto (capítulos y partidas)? Esta acción no se puede deshacer.')) return;
+                if(!confirm('¿Eliminar TODO el presupuesto (capítulos y partidas)? Esta acción no se puede deshacer.')) return;
                 try{ localStorage.removeItem('apu-budget'); }catch{}
                 try{ localStorage.removeItem('apu-chapters'); }catch{}
                 try{ localStorage.removeItem('apu-current-chapter'); }catch{}
@@ -5414,12 +5419,13 @@ const App: React.FC = () => {
                   if(activeProjectId && activeProjectId !== 'inline'){
                     setSavedProjectsList((prev:any[] = [])=> prev.filter(p => String(p?.id||'') !== String(activeProjectId)));
                     setActiveProjectId(null);
-                    showNotification('Presupuesto y proyecto del stick borrados','info');
+                    showNotification('Presupuesto y proyecto del stick eliminados','info');
                   } else {
-                    showNotification('Presupuesto borrado','info');
+                    showNotification('Presupuesto eliminado','info');
                   }
                 }catch{ showNotification('Presupuesto borrado','info'); }
-              }} data-tour="clear-budget" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs">🗑️ Borrar presupuesto</button>
+              }} data-tour="clear-budget" className="px-3 py-1 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40 text-xs" title="Borrar presupuesto" aria-label="Borrar presupuesto">🗑️ Borrar presupuesto</button>
+              
               
               </>
             )}
@@ -5429,9 +5435,9 @@ const App: React.FC = () => {
 
         {/* Tabs */}
         <div className="flex gap-2 bg-slate-800 p-1 rounded-2xl w-fit" data-tour="tabs">
-          <button data-tour="tab-biblioteca" onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`}>Biblioteca de APU</button>
-          <button data-tour="tab-presupuesto" onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`}>Presupuesto</button>
-          <button data-tour="tab-calculadora" onClick={()=>setTab('calculadora')} className={`px-3 py-1 rounded-xl ${tab==='calculadora'?'bg-slate-900':'hover:bg-slate-700'}`}>Calculadora</button>
+          <button data-tour="tab-biblioteca" onClick={()=>setTab('biblioteca')} className={`px-3 py-1 rounded-xl ${tab==='biblioteca'?'bg-slate-900':'hover:bg-slate-700'}`} title="Ir a Biblioteca de APU" aria-label="Ir a Biblioteca de APU">Biblioteca de APU</button>
+          <button data-tour="tab-presupuesto" onClick={()=>setTab('presupuesto')} className={`px-3 py-1 rounded-xl ${tab==='presupuesto'?'bg-slate-900':'hover:bg-slate-700'}`} title="Ir a Presupuesto" aria-label="Ir a Presupuesto">Presupuesto</button>
+          <button data-tour="tab-calculadora" onClick={()=>setTab('calculadora')} className={`px-3 py-1 rounded-xl ${tab==='calculadora'?'bg-slate-900':'hover:bg-slate-700'}`} title="Ir a Calculadora" aria-label="Ir a Calculadora">Calculadora</button>
         </div>
 
         {/* Se eliminó la pestaña 'proyecto' y su UI asociada */}
@@ -5462,7 +5468,7 @@ const App: React.FC = () => {
                   <input type="checkbox" checked={libHideIncomplete} onChange={(e)=> setLibHideIncomplete(e.currentTarget.checked)} />
                   Ocultar incompletos
                 </label>
-                <button data-tour="add-apu" onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm">+ Crear nuevo APU</button>
+                <button data-tour="add-apu" onClick={()=>setShowCreateApu(true)} className="ml-auto px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-500 text-sm" title="Crear nuevo APU" aria-label="Crear nuevo APU">+ Crear nuevo APU</button>
               </div>
             </div>
 
@@ -5507,17 +5513,24 @@ const App: React.FC = () => {
                           
                           <td className="py-2 px-3">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <button onClick={()=>toggleExpandRow(a.id)} className="text-left hover:underline">
+                              <button onClick={()=>toggleExpandRow(a.id)} className="text-left hover:underline" title="Ver/Editar APU" aria-label="Ver/Editar APU">
                                 {a.descripcion}
                               </button>
                               {(() => {
                                 try {
                                   const incomplete = isApuIncomplete(a) || !String(a?.unidadSalida||'').trim() || unitCost(a, resources).unit === 0;
                                   if (!incomplete) return null;
+                                  const det = isApuIncompleteDetail(a);
+                                  const reasons = new Set<string>(det.reasons || []);
+                                  if (!String(a?.unidadSalida||'').trim()) reasons.add('sin unidad');
+                                  try { if (unitCost(a, resources).unit === 0) reasons.add('PU=0'); } catch {}
                                   return (
                                     <span
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-300 text-[10px]"
-                                      title="Este APU no tiene costo calculable o le falta unidad/secciones"
+                                      title={(() => {
+                                        const list = Array.from(reasons);
+                                        return list.length ? `Incompleto: ${list.join(', ')}` : 'Incompleto';
+                                      })()}
                                       aria-label="APU incompleto"
                                     >
                                       incompleto
@@ -5576,8 +5589,8 @@ const App: React.FC = () => {
                                       </div>
                                     )}
                                     <div className="flex justify-end gap-2">
-                                      <button onClick={()=>setImportOpen(false)} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-                                      <button onClick={handleProcessImport} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Procesar</button>
+                                      <button onClick={()=>setImportOpen(false)} className="px-3 py-2 rounded-xl border border-slate-600" title="Cerrar" aria-label="Cerrar">Cerrar</button>
+                                      <button onClick={handleProcessImport} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40" title="Procesar importación" aria-label="Procesar importación">Procesar</button>
                                     </div>
                                   </div>
                                 </div>
@@ -5634,12 +5647,12 @@ const App: React.FC = () => {
                                       const name = (prompt('Nuevo nombre del APU:', curr)||'').trim();
                                       if(!name) return;
                                       setExpandedForm((f:any)=> ({...f, descripcion: name }));
-                                    }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Renombrar</button>
+                                    }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Renombrar APU" aria-label="Renombrar APU">Renombrar</button>
                                     {/* Eliminar APU (usa handler global) */}
-                                    <button onClick={()=>{ if(!expandedId) return; handleDeleteApu(expandedId); setExpandedId(null); setExpandedForm(null); }} className="px-2 py-1 rounded-lg border border-slate-600 hover:bg-slate-700/30 text-xs">Eliminar</button>
+                                    <button onClick={()=>{ if(!expandedId) return; handleDeleteApu(expandedId); setExpandedId(null); setExpandedForm(null); }} className="px-2 py-1 rounded-lg border border-slate-600 hover:bg-slate-700/30 text-xs" title="Eliminar APU" aria-label="Eliminar APU">Eliminar</button>
                                     {/* Agregar fila rápida a la primera sección disponible */}
                                     {isMineById(expandedId||'') && (
-                                      <button onClick={addFormAnyRow} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">+ Fila</button>
+                                      <button onClick={addFormAnyRow} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Agregar fila" aria-label="Agregar fila">+ Fila</button>
                                     )}
                                     {isMineById(expandedId||'') && (
                                     <button onClick={()=>{
@@ -5659,7 +5672,7 @@ const App: React.FC = () => {
                                     }} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60" title="Borrar todas las secciones" aria-label="Borrar todas las secciones"><TrashIcon className="h-4 w-4"/></button>
                                     )}
                                     {isMineById(expandedId||'') && (
-                                      <button onClick={addFormExtraSection} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">+ Agregar sección</button>
+                                      <button onClick={addFormExtraSection} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Agregar sección" aria-label="Agregar sección">+ Agregar sección</button>
                                     )}
                                   </div>
                                 </div>
@@ -5688,7 +5701,7 @@ const App: React.FC = () => {
                                                 titles[sec.key] = name;
                                                 return { ...f, secciones: { ...(f.secciones||{}), __titles: titles } };
                                               });
-                                            }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Renombrar</button>
+                                            }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Renombrar sección" aria-label="Renombrar sección">Renombrar</button>
                                             )}
                                             {isMineById(expandedId||'') && (
                                             <button onClick={()=>{
@@ -5696,7 +5709,7 @@ const App: React.FC = () => {
                                             }} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60" title="Eliminar sección" aria-label="Eliminar sección"><TrashIcon className="h-4 w-4"/></button>
                                             )}
                                             {isMineById(expandedId||'') && (
-                                              <button onClick={()=>addFormSecRow(sec.key)} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">+ Fila</button>
+                                              <button onClick={()=>addFormSecRow(sec.key)} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Agregar fila" aria-label="Agregar fila">+ Fila</button>
                                             )}
                                           </div>
                                         </div>
@@ -5773,7 +5786,7 @@ const App: React.FC = () => {
                                                 extras[secIdx] = { ...extras[secIdx], title: name };
                                                 return { ...f, secciones: { ...f.secciones, extras } };
                                               });
-                                            }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Renombrar</button>
+                                            }} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Renombrar sección" aria-label="Renombrar sección">Renombrar</button>
                                             <button onClick={()=>{
                                               if(!confirm('¿Eliminar esta sección completa?')) return;
                                               setExpandedForm((f:any)=>{
@@ -5781,8 +5794,8 @@ const App: React.FC = () => {
                                                 extras.splice(secIdx,1);
                                                 return { ...f, secciones: { ...f.secciones, extras } };
                                               });
-                                            }} className="px-2 py-1 rounded-lg border border-slate-600 hover:bg-slate-700/30 text-xs">Eliminar</button>
-                                            <button onClick={()=>addFormExtraRow(secIdx)} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">+ Fila</button>
+                                            }} className="px-2 py-1 rounded-lg border border-slate-600 hover:bg-slate-700/30 text-xs" title="Eliminar sección" aria-label="Eliminar sección">Eliminar</button>
+                                            <button onClick={()=>addFormExtraRow(secIdx)} className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs" title="Agregar fila" aria-label="Agregar fila">+ Fila</button>
                                           </div>
                                         </div>
                                         <div className="overflow-x-auto">
@@ -5891,8 +5904,8 @@ const App: React.FC = () => {
                                   );
                                 })()}
                                 <div className="flex justify-end gap-2">
-                                  <button onClick={()=>{ setExpandedId(null); setExpandedForm(null); }} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
-                                  <button onClick={saveExpanded} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40">Guardar</button>
+                                  <button onClick={()=>{ setExpandedId(null); setExpandedForm(null); }} className="px-3 py-2 rounded-xl border border-slate-600" title="Cerrar" aria-label="Cerrar">Cerrar</button>
+                                  <button onClick={saveExpanded} className="px-3 py-2 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700/40" title="Guardar cambios" aria-label="Guardar cambios">Guardar</button>
                                 </div>
                               </div>
                             </td>
@@ -5933,6 +5946,11 @@ const App: React.FC = () => {
                     {(() => {
                       const listId = 'apu-replace-list';
                       const opts = (allApus||[]).map((a:any)=> ({ id:a.id, label:`${a.descripcion} (${a.id})` }));
+                      // Unidad origen/destino y aviso de compatibilidad
+                      let srcU = '' as string; let dstU = '' as string; let mismatch = false;
+                      try{ if(usageModal.apuId){ const a = getApuById(usageModal.apuId); srcU = String(a?.unidadSalida||''); } }catch{}
+                      try{ if(usageModal.targetId){ const b = getApuById(usageModal.targetId); dstU = String(b?.unidadSalida||''); } }catch{}
+                      mismatch = !!(srcU && dstU && normUnit(srcU) !== normUnit(dstU));
                       return (
                         <>
                           <input
@@ -5945,16 +5963,39 @@ const App: React.FC = () => {
                           <datalist id={listId}>
                             {opts.map(o=> (<option key={o.id} value={o.id}>{o.label}</option>))}
                           </datalist>
+                          {(usageModal.apuId && usageModal.targetId) && (
+                            <div className={"text-xs mt-1 " + (mismatch ? 'text-amber-300' : 'text-slate-400')}>
+                              Unidad origen: <span className="font-medium">{srcU || '—'}</span> · destino: <span className="font-medium">{dstU || '—'}</span>
+                              {mismatch && <span className="ml-2">(difieren; recomienda validar metrados/PU)</span>}
+                            </div>
+                          )}
                         </>
                       );
                     })()}
                   </div>
                   <div className="flex justify-end gap-2">
-                    <button onClick={closeUsageModal} className="px-3 py-2 rounded-xl border border-slate-600">Cerrar</button>
+                    <button onClick={closeUsageModal} className="px-3 py-2 rounded-xl border border-slate-600" title="Cerrar" aria-label="Cerrar">Cerrar</button>
                     <button
-                      onClick={()=> usageModal.apuId && replaceApuEverywhere(usageModal.apuId, usageModal.targetId)}
+                      onClick={()=> {
+                        if(!usageModal.apuId) return;
+                        // Confirmar si unidad difiere
+                        try{
+                          const a = getApuById(usageModal.apuId!);
+                          const b = usageModal.targetId ? getApuById(usageModal.targetId) : null;
+                          const uA = String(a?.unidadSalida||'');
+                          const uB = String(b?.unidadSalida||'');
+                          const diff = !!(uA && uB && normUnit(uA) !== normUnit(uB));
+                          if(diff){
+                            const ok = confirm(`La unidad del origen (${uA}) difiere de la unidad del destino (${uB}).\n¿Deseas continuar con el reemplazo masivo?`);
+                            if(!ok) return;
+                          }
+                        }catch{}
+                        replaceApuEverywhere(usageModal.apuId, usageModal.targetId);
+                      }}
                       disabled={!usageModal.apuId || !usageModal.targetId || usageModal.apuId===usageModal.targetId}
                       className="px-3 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Reemplazar APU en todas las referencias"
+                      aria-label="Reemplazar APU en todas las referencias"
                     >Reemplazar</button>
                   </div>
                 </div>
@@ -5980,8 +6021,8 @@ const App: React.FC = () => {
 
         {tab==='presupuesto' && (
           <>
-            {/* Header de Proyecto/Usuario (sticky) */}
-            <div className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:backdrop-blur bg-slate-900/80 border-b border-slate-800/80 mb-4">
+            {/* Header de Proyecto/Usuario */}
+            <div className="mb-4">
               <div className="w-full max-w-6xl mx-auto bg-slate-800/60 border border-slate-700 rounded-2xl p-4 m-2 shadow-md grid gap-3">
                 {/* Modal de confirmación para Planillas */}
                 {planillaModalOpen && (
@@ -6008,16 +6049,51 @@ const App: React.FC = () => {
                 )}
                 <div className="grid md:grid-cols-3 gap-3 items-start md:items-start">
                   {/* Selector de Proyecto */}
-                  <div className="grid gap-2 min-w-0 text-center">
+                  <div className="grid gap-2 min-w-0 text-left">
                     <div className="flex items-center justify-between w-full">
                       <h3 className="text-sm font-semibold text-slate-200">Proyecto</h3>
-                      {(() => {
-                        const plz = (activeProject && (activeProject as any).plazoDias) || projectInfo?.plazoDias;
-                        const val = (Number.isFinite(Number(plz)) && Number(plz) > 0) ? String(plz) : '—';
-                        return (
-                          <span className="text-xs text-slate-400">Plazo: {val} días</span>
-                        );
-                      })()}
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const plz = (activeProject && (activeProject as any).plazoDias) || projectInfo?.plazoDias;
+                          const val = (Number.isFinite(Number(plz)) && Number(plz) > 0) ? String(plz) : '—';
+                          const label = `Plazo: ${val} días`;
+                          return (
+                            <span className="text-xs text-slate-400 truncate max-w-[50%]" title={label}>{label}</span>
+                          );
+                        })()}
+                        {/* Botonera arriba a la derecha (achicada) */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Agregar proyecto"
+                            aria-label="Agregar proyecto"
+                            onClick={()=>{ setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' }); setNewBudgetFlow(true); setShowProjectInfoModalForSave(true); }}
+                          >
+                            <PlusIcon className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Modificar datos del proyecto"
+                            aria-label="Modificar datos del proyecto"
+                            onClick={()=> setShowProjectInfoModalForSave(true)}
+                            disabled={!activeProjectId}
+                          >
+                            <PencilSquareIcon className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            title="Eliminar proyecto"
+                            aria-label="Eliminar proyecto"
+                            onClick={handleDeleteProjectQuick}
+                            disabled={!activeProjectId}
+                          >
+                            <TrashIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <div className="grid gap-2 max-w-full overflow-hidden">
                       <select
@@ -6035,40 +6111,8 @@ const App: React.FC = () => {
                           <option value="inline">{titleCase(projectInfo?.nombreProyecto || 'Proyecto')}{projectInfo?.propietario? ` — ${titleCase(projectInfo?.propietario)}`:''}</option>
                         )}
                       </select>
-                      {/* Acciones de proyecto: siempre visibles */}
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                          title="Agregar proyecto"
-                          aria-label="Agregar proyecto"
-                          onClick={()=>{ setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' }); setNewBudgetFlow(true); setShowProjectInfoModalForSave(true); }}
-                        >
-                          <PlusIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                          title="Modificar datos del proyecto"
-                          aria-label="Modificar datos del proyecto"
-                          onClick={()=> setShowProjectInfoModalForSave(true)}
-                          disabled={!activeProjectId}
-                        >
-                          <PencilSquareIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-                          title="Eliminar proyecto"
-                          aria-label="Eliminar proyecto"
-                          onClick={handleDeleteProjectQuick}
-                          disabled={!activeProjectId}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
                       {activeProject && (
-                        <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-300 max-w-full text-center">
+                        <div className="flex flex-wrap items-center justify-start gap-2 text-xs text-slate-300 max-w-full text-left">
                           <div className="flex items-baseline whitespace-normal break-words">
                             <span className="text-slate-400 font-normal mr-1">Nombre:</span>
                             <span className="inline-block align-bottom break-words" title={titleCase(activeProject.name)}>{titleCase(activeProject.name) || '—'}</span>
@@ -6094,57 +6138,57 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   {/* Selector de Usuario */}
-                  <div className="grid gap-2 min-w-0 max-w-full text-center">
+                  <div className="grid gap-2 min-w-0 max-w-full text-left">
                     <div className="flex items-center justify-between w-full">
                       <h3 className="text-sm font-semibold text-slate-200">Usuario</h3>
-                      <span className="text-xs text-slate-400 truncate max-w-[50%]" title={titleCase(activeUser?.profesion || '')}>Profesión: {titleCase(activeUser?.profesion || '—')}</span>
-                    </div>
-                    <div className="grid gap-2">
                       <div className="flex items-center gap-2">
-                        <select
-                          className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
-                          value={activeUserEmail || ''}
-                          title={activeUser? `${titleCase(activeUser?.nombre||'')}${activeUser?.email? ' — '+activeUser.email:''}`: ''}
-                          onChange={(e)=> setActiveUserEmail(e.target.value || null)}
-                        >
-                          <option value="">Seleccionar…</option>
-                          {users.map((u:any, idx:number)=> (
-                            <option key={u.email || idx} value={u.email || ''}>{titleCase(u.nombre) || u.email || `Usuario ${idx+1}`}</option>
-                          ))}
-                        </select>
-                        {/* Botonera de acciones de usuario (derecha) */}
-                        <div className="flex items-center justify-end gap-1">
+                        <span className="text-xs text-slate-400 truncate max-w-[50%]" title={titleCase(activeUser?.profesion || '')}>Profesión: {titleCase(activeUser?.profesion || '—')}</span>
+                        {/* Botonera arriba a la derecha (achicada) */}
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={handleCreateUserQuick}
-                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
                             title="Crear usuario"
                             aria-label="Crear usuario"
                           >
-                            <UserPlusIcon className="h-4 w-4" />
+                            <UserPlusIcon className="h-3.5 w-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={handleEditUserQuick}
-                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
                             title="Editar usuario seleccionado"
                             aria-label="Editar usuario seleccionado"
                           >
-                            <PencilSquareIcon className="h-4 w-4" />
+                            <PencilSquareIcon className="h-3.5 w-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={handleDeleteUserQuick}
-                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
                             title="Eliminar usuario seleccionado"
                             aria-label="Eliminar usuario seleccionado"
                           >
-                            <TrashIcon className="h-4 w-4" />
+                            <TrashIcon className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
+                    </div>
+                    <div className="grid gap-2 max-w-full overflow-hidden">
+                      <select
+                        className="w-full min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
+                        value={activeUserEmail || ''}
+                        title={activeUser? `${titleCase(activeUser?.nombre||'')}${activeUser?.email? ' — '+activeUser.email:''}`: ''}
+                        onChange={(e)=> setActiveUserEmail(e.target.value || null)}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {users.map((u:any, idx:number)=> (
+                          <option key={u.email || idx} value={u.email || ''}>{titleCase(u.nombre) || u.email || `Usuario ${idx+1}`}</option>
+                        ))}
+                      </select>
                       {activeUser && (
-                        <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-300 max-w-full text-center">
+                        <div className="flex flex-wrap items-center justify-start gap-2 text-xs text-slate-300 max-w-full text-left">
                           <div className="flex items-baseline whitespace-normal break-words">
                             <span className="text-slate-400 font-normal mr-1">Nombre:</span>
                             <span className="inline-block align-bottom break-words" title={titleCase(activeUser.nombre)}>{titleCase(activeUser.nombre) || '—'}</span>
@@ -6159,23 +6203,30 @@ const App: React.FC = () => {
                             <span className="text-slate-400 font-normal mr-1">Teléfono:</span>
                             <span className="inline-block align-bottom break-words" title={activeUser.telefono || ''}>{activeUser.telefono || '—'}</span>
                           </div>
-                          <span className="mx-1 text-slate-500">·</span>
-                          <div className="flex items-baseline whitespace-normal break-words">
-                            <span className="text-slate-400 font-normal mr-1">Profesión:</span>
-                            <span className="inline-block align-bottom break-words" title={titleCase(activeUser.profesion) || ''}>{titleCase(activeUser.profesion) || '—'}</span>
-                          </div>
+                          {/* Profesión se muestra en el encabezado; omitida aquí para evitar duplicación */}
                         </div>
                       )}
                     </div>
                   </div>
                   {/* Stick de Planillas (presets) */}
-                  <div className="grid gap-2 min-w-0 text-center">
+                  <div className="grid gap-2 min-w-0 text-left">
                     <div className="flex items-center justify-between w-full">
                       <h3 className="text-sm font-semibold text-slate-200">Planillas</h3>
-                      <span className="text-xs text-slate-400">Cargar preset</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+                          title="Cargar preset"
+                          aria-label="Cargar preset"
+                          onClick={()=> planillaSelectRef.current?.focus()}
+                        >
+                          <ArrowDownTrayIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <div className="grid gap-2 max-w-full overflow-hidden">
                       <select
+                        ref={planillaSelectRef}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm truncate outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-slate-600"
                         value={planillaSelect}
                         onChange={(e)=> handlePlanillaSelect(e.target.value)}
@@ -6194,32 +6245,387 @@ const App: React.FC = () => {
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Contenido principal */}
               <div className="flex-1 grid gap-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <h2 className="text-lg font-semibold">
-                    {(activeProject?.name || projectInfo?.nombreProyecto)
-                      ? `Presupuesto · ${titleCase(activeProject?.name || projectInfo?.nombreProyecto || '')}`
-                      : 'Presupuesto'}
+                    <span className="inline-flex items-center bg-slate-900 border border-slate-700 rounded-2xl px-3 py-1.5 text-slate-100">
+                      {(activeProject?.name || projectInfo?.nombreProyecto)
+                        ? `Presupuesto · ${titleCase(activeProject?.name || projectInfo?.nombreProyecto || '')}`
+                        : 'Presupuesto'}
+                    </span>
                   </h2>
                   <div className="flex flex-wrap gap-2">
                     {/* Se eliminó la UI de Plantillas */}
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={()=>{ if(currentChapterId){ renameChapter(currentChapterId); } }}
+                        className="text-slate-300 text-sm hover:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-500 rounded"
+                        title={currentChapterId? 'Renombrar capítulo actual' : 'Selecciona un capítulo para renombrar'}
+                        aria-label="Renombrar capítulo"
+                        disabled={!currentChapterId}
+                      >
+                        Nombre del capítulo
+                      </button>
                       <select
-                        className="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm"
+                        className="bg-slate-900 border border-slate-700 rounded-2xl px-4 py-2 text-sm"
                         value={currentChapterId}
                         onChange={(e)=>{ setCurrentChapterId(e.target.value); saveCurrentChapter(e.target.value); }}
                       >
                         <option value="">Capítulos…</option>
                         {chapters.map(c=> <option key={c.id} value={c.id}>{c.letter} — {c.title}</option>)}
                       </select>
-                        <button onClick={addChapter} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">+ Capítulo</button>
-                        {currentChapterId && (
-                          <>
-                            <button onClick={()=>renameChapter(currentChapterId)} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">Renombrar</button>
-                            <button onClick={()=>deleteChapter(currentChapterId)} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">Eliminar</button>
-                          </>
-                        )}
-                      <button onClick={addRow} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40">+ Partida</button>
                     </div>
+                  </div>
+                </div>
+
+                {/* Toolbar de acciones principales (Presupuesto) */}
+                <div className="bg-slate-900/60 border border-slate-700 rounded-2xl p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                  {/* Botones de capítulos unificados en la misma pill */}
+                  <button onClick={addChapter} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Agregar capítulo" aria-label="Agregar capítulo">+ Capítulo</button>
+                  {currentChapterId && (
+                    <>
+                      <button onClick={()=>renameChapter(currentChapterId)} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Renombrar capítulo" aria-label="Renombrar capítulo">Renombrar</button>
+                      <button onClick={()=>deleteChapter(currentChapterId)} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Eliminar capítulo" aria-label="Eliminar capítulo">Eliminar</button>
+                    </>
+                  )}
+                  <button onClick={addRow} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Agregar partida" aria-label="Agregar partida">+ Partida</button>
+                  <span role="separator" aria-orientation="vertical" className="h-6 w-px bg-slate-700/70 mx-1 sm:mx-2" aria-hidden="true" />
+                  <button onClick={async ()=>{
+                    try{
+                      // Utilidades de cálculo (sin formatear, dejamos formato a Excel)
+                      const calcSubPu = (s:any)=>{
+                        const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                        const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                        const ov = (typeof s?.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : undefined;
+                        return (ov ?? base) || 0;
+                      };
+                      const calcRowPu = (r:any)=>{
+                        const ids:string[] = Array.isArray(r?.apuIds) && r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                        const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                        const ov = (typeof r?.overrideUnitPrice === 'number' && Number.isFinite(r.overrideUnitPrice)) ? r.overrideUnitPrice : undefined;
+                        return (ov ?? base) || 0;
+                      };
+                      // Agrupar por capítulo y ordenar como en UI
+                      const chMap: Record<string, any[]> = {};
+                      chapters.forEach(ch=> chMap[ch.id] = []);
+                      rows.forEach(r=>{ const id = r.chapterId || (chapters[0]?.id||''); if(!chMap[id]) chMap[id]=[]; chMap[id].push(r); });
+                      // Encabezado como en impresión
+                      const projName = (activeProject?.name || projectInfo?.nombreProyecto || 'Proyecto sin título');
+                      const clientName = (activeProject?.client || projectInfo?.propietario || '');
+                      const location = ((activeProject as any)?.location || [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', '));
+                      const contract = ((activeProject as any)?.contract || (projectInfo as any)?.contrato || '');
+
+                      const presData: any[][] = [];
+                      presData.push([ `Presupuesto — ${projName}` ]);
+                      presData.push([ 'Obra:', projName || '', '', 'Cliente:', clientName || '' ]);
+                      presData.push([ 'Dirección:', location || '', '', 'Contrato:', contract || '' ]);
+                      presData.push([]);
+                      presData.push([ 'Código','Descripción','Unidad','Cantidad','P.Unitario','P.Total' ]);
+                      const usedApus: Record<string,{ apu:any, items:Set<string> }> = {};
+                      chapters.forEach((ch, ci)=>{
+                        const list = chMap[ch.id]||[]; if(!list.length) return;
+                        presData.push([ String(ci+1), ch.title, '', null, null, null ]);
+                        list.forEach((r, ri)=>{
+                          const idx = `${ci+1}.${ri+1}`;
+                          const subs: any[] = Array.isArray(r.subRows)? r.subRows : [];
+                          let rowDirectTotal = 0;
+                          let secMO = 0, secMAT = 0, secEQ = 0, secVAR = 0;
+                          if(!subs.length){
+                            presData.push([ idx, String(r.descripcion||'Partida').toUpperCase(), '', null, null, null ]);
+                            const sIdx = `${ci+1}.${ri+1}.1`;
+                            const un = (r.unidadSalida || (Array.isArray(r.apuIds) && r.apuIds[0] ? (getApuById(r.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                            const qty = Number(r.metrados||0);
+                            const pu = calcRowPu(r);
+                            const tot = (typeof r?.overrideTotal === 'number' && Number.isFinite(r.overrideTotal)) ? r.overrideTotal : (pu * qty);
+                            presData.push([ sIdx, 'Subpartida', un, Number.isFinite(qty)&&qty!==0? qty: null, Number.isFinite(pu)&&pu!==0? pu: null, Number.isFinite(tot)&&tot!==0? tot: null ]);
+                            const idsList:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                            for(const id of idsList){ try{ const apu = getApuById(id); if(!apu) continue; const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} }
+                            rowDirectTotal = secMO + secMAT + secEQ + secVAR;
+                            const idsUsage:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                            idsUsage.forEach(id=>{ try{ const apu = getApuById(id); if(!apu) return; if(!usedApus[id]) usedApus[id] = { apu, items: new Set() }; usedApus[id].items.add(sIdx); }catch{} });
+                          } else {
+                            presData.push([ idx, String(r.descripcion||'Partida').toUpperCase(), '', null, null, null ]);
+                            subs.forEach((s, si)=>{
+                              const sIdx = `${ci+1}.${ri+1}.${si+1}`;
+                              const un = (s.unidadSalida || (Array.isArray(s.apuIds) && s.apuIds[0] ? (getApuById(s.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                              const qty = Number(s?.metrados||0);
+                              const pu = calcSubPu(s);
+                              const tot = (typeof s?.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : (pu * qty);
+                              presData.push([ sIdx, (s.descripcion||'Subpartida'), un, Number.isFinite(qty)&&qty!==0? qty: null, Number.isFinite(pu)&&pu!==0? pu: null, Number.isFinite(tot)&&tot!==0? tot: null ]);
+                              rowDirectTotal += Number(tot||0);
+                              const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                              ids.forEach(id=>{ try{ const apu = getApuById(id); if(!apu) return; if(!usedApus[id]) usedApus[id] = { apu, items: new Set() }; usedApus[id].items.add(sIdx); const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} });
+                            });
+                            rowDirectTotal = secMO + secMAT + secEQ + secVAR;
+                          }
+                          if(secMO) presData.push([ '', 'Subtotal Mano de Obra', '', null, null, secMO ]);
+                          if(secMAT) presData.push([ '', 'Subtotal Materiales', '', null, null, secMAT ]);
+                          if(secEQ) presData.push([ '', 'Subtotal Equipos', '', null, null, secEQ ]);
+                          if(secVAR) presData.push([ '', 'Subtotal Varios', '', null, null, secVAR ]);
+                          presData.push([ '', `COSTO DIRECTO partida ${String(r.descripcion||'').toLowerCase()}`, '', null, null, rowDirectTotal || null ]);
+                        });
+                      });
+                      const ggPct = Number(gg)||0, utilPct = Number(util)||0;
+                      const baseDirecto = Number(sumDirecto)||0;
+                      const ggAmt = baseDirecto * ggPct;
+                      const utilAmt = (baseDirecto + ggAmt) * utilPct;
+                      presData.push([]);
+                      presData.push(['','COSTO DIRECTO','','','', baseDirecto ]);
+                      presData.push(['',`utilidad (${(utilPct*100).toFixed(0)}%)`,'','','', utilAmt ]);
+                      presData.push(['',`gastos generales (${(ggPct*100).toFixed(0)}%)`,'','','', ggAmt ]);
+                      presData.push(['','total neto','','','', baseDirecto + utilAmt + ggAmt ]);
+                      presData.push([]);
+                      presData.push(['Notas']);
+                      presData.push([String(budgetNotes||'')]);
+
+                      // Helper para etiqueta de APU (solo número)
+                      const getApuLabel = (apuId: string, _apu: any): string => {
+                        try {
+                          const aliases = readAliasMap();
+                          const canon = (aliases && aliases[apuId]) ? aliases[apuId] : apuId;
+                          const raw = localStorage.getItem('apu-library');
+                          if (raw) {
+                            const list = JSON.parse(raw||'null');
+                            if (Array.isArray(list)) {
+                              const idx = list.findIndex((a:any)=> String(a?.id||'')===String(canon));
+                              if (idx>=0) { return String(idx+1); }
+                            }
+                          }
+                        } catch {}
+                        return '';
+                      };
+
+                      // Intento con ExcelJS (si está disponible) con estilos, cae a SheetJS
+                      let excelDone = false;
+                      try{
+                        const ExcelJS = await import('exceljs');
+                        const { saveAs } = await import('file-saver');
+                        const wb = new (ExcelJS as any).Workbook();
+                        const ws = wb.addWorksheet('Presupuesto');
+                        presData.forEach(r=> ws.addRow(r));
+                        const ws2 = wb.addWorksheet('APUs');
+                        ws2.addRow(['APU','Descripción','Unidad','P. UNIT.','Usado en']);
+                        Object.entries(usedApus).forEach(([id, rec])=>{
+                          try{
+                            const apu:any = (rec as any).apu;
+                            const unit = (apu?.unidadSalida || '');
+                            const pu = unitCost(apu, resources).unit || 0;
+                            const refs = Array.from((rec as any).items||[]).sort().join(', ');
+                            const label = getApuLabel(id, apu) || id;
+                            const row = ws2.addRow([label, (apu?.descripcion||''), unit, Number.isFinite(pu)&&pu!==0? pu: null, refs]);
+                            row.getCell(4).numFmt = '#,##0';
+                          }catch{}
+                        });
+                        const buf = await wb.xlsx.writeBuffer();
+                        const slug = String(projName).toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-_]+/g,'');
+                        (saveAs as any)(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `presupuesto-${slug||'export'}.xlsx`);
+                        excelDone = true;
+                      } catch {}
+
+                      if(!excelDone){
+                        const XLSX = await import('xlsx');
+                        const wb = XLSX.utils.book_new();
+                        const wsPres = XLSX.utils.aoa_to_sheet(presData);
+                        wsPres['!merges'] = (wsPres['!merges']||[]).concat([
+                          { s:{ r:0, c:0 }, e:{ r:0, c:5 } },
+                          { s:{ r:1, c:1 }, e:{ r:1, c:2 } },
+                          { s:{ r:1, c:4 }, e:{ r:1, c:5 } },
+                          { s:{ r:2, c:1 }, e:{ r:2, c:2 } },
+                          { s:{ r:2, c:4 }, e:{ r:2, c:5 } },
+                        ]);
+                        const notesContentRow = presData.length - 1;
+                        wsPres['!merges'].push({ s:{ r:notesContentRow, c:0 }, e:{ r:notesContentRow, c:5 } });
+                        wsPres['!cols'] = [ { wch:6 }, { wch:60 }, { wch:10 }, { wch:12 }, { wch:16 }, { wch:16 } ];
+                        const headerRowIndex = presData.findIndex(r => r && r[0] === 'Código' && r[1] === 'Descripción');
+                        const dataStart = headerRowIndex >= 0 ? headerRowIndex + 1 : 0;
+                        for(let R = dataStart; R < presData.length; R++){
+                          const cQty = XLSX.utils.encode_cell({ r:R, c:3 });
+                          const cPU  = XLSX.utils.encode_cell({ r:R, c:4 });
+                          const cTot = XLSX.utils.encode_cell({ r:R, c:5 });
+                          const q = (wsPres as any)[cQty]; if(q && typeof q.v === 'number'){ q.t='n'; q.z = '#,##0.00'; }
+                          const pu = (wsPres as any)[cPU]; if(pu && typeof pu.v === 'number'){ pu.t='n'; pu.z = '#,##0'; }
+                          const t = (wsPres as any)[cTot]; if(t && typeof t.v === 'number'){ t.t='n'; t.z = '#,##0'; }
+                        }
+                        XLSX.utils.book_append_sheet(wb, wsPres, 'Presupuesto');
+                        const apusData: any[][] = [[ 'APU','Descripción','Unidad','P. UNIT.','Usado en' ]];
+                        Object.entries(usedApus).forEach(([id, rec])=>{
+                          try{
+                            const apu:any = (rec as any).apu;
+                            const unit = (apu?.unidadSalida || '');
+                            const pu = unitCost(apu, resources).unit || 0;
+                            const refs = Array.from((rec as any).items||[]).sort().join(', ');
+                            const label = getApuLabel(id, apu);
+                            apusData.push([ label || id, (apu?.descripcion||''), unit, Number.isFinite(pu)&&pu!==0? pu: null, refs ]);
+                          }catch{}
+                        });
+                        const wsApus = XLSX.utils.aoa_to_sheet(apusData);
+                        wsApus['!cols'] = [ {wch:20}, {wch:50}, {wch:10}, {wch:16}, {wch:20} ];
+                        for(let R = 1; R < apusData.length; R++){
+                          const cPU = XLSX.utils.encode_cell({ r:R, c:3 });
+                          const pu = (wsApus as any)[cPU]; if(pu && typeof pu.v === 'number'){ pu.t='n'; pu.z = '#,##0'; }
+                        }
+                        XLSX.utils.book_append_sheet(wb, wsApus, 'APUs');
+                        const slug = String(projName).toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-_]+/g,'');
+                        XLSX.writeFile(wb, `presupuesto-${slug||'export'}.xlsx`);
+                      }
+                    }catch{ /* noop */ }
+                  }} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Exportar a Excel" aria-label="Exportar a Excel">📥 Exportar Excel</button>
+                  <button onClick={()=>{
+                    try {
+                      const fmtCl = (n:number)=> new Intl.NumberFormat('es-CL', { style:'currency', currency:'CLP', maximumFractionDigits:0 }).format(n||0);
+                      const fmtQty = (n:number)=> new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(Number.isFinite(n)? n: 0);
+                      const esc = (s: any)=> String(s ?? '').replace(/[&<>"']/g, (c)=> ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' } as any)[c]);
+                      const calcSubPu = (s:any)=>{
+                        const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                        const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                        const ov = (typeof s?.overrideUnitPrice === 'number' && Number.isFinite(s.overrideUnitPrice)) ? s.overrideUnitPrice : undefined;
+                        return (ov ?? base) || 0;
+                      };
+                      const calcRowPu = (r:any)=>{
+                        const ids:string[] = Array.isArray(r?.apuIds) && r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                        const base = ids.reduce((acc:number, id:string)=>{ try { return acc + unitCost(getApuById(id), resources).unit; } catch { return acc; } }, 0);
+                        const ov = (typeof r?.overrideUnitPrice === 'number' && Number.isFinite(r.overrideUnitPrice)) ? r.overrideUnitPrice : undefined;
+                        return (ov ?? base) || 0;
+                      };
+                      // Agrupar por capítulo en el orden actual
+                      const chMap: Record<string, any[]> = {};
+                      chapters.forEach(ch=> chMap[ch.id] = []);
+                      rows.forEach(r=>{ const id = r.chapterId || (chapters[0]?.id||''); if(!chMap[id]) chMap[id]=[]; chMap[id].push(r); });
+                      const styles = `
+                        *{ box-sizing: border-box; }
+                        @page{ size:A4; margin:10mm 10mm 12mm 10mm; }
+                        body{ font-family: Arial, Helvetica, sans-serif; color:#111; }
+                        h1{ text-align:center; margin: 0 0 12px; font-size:18px; }
+                        .meta{ display:flex; justify-content:space-between; align-items:flex-start; margin: 0 0 10px; font-size:12px; }
+                        .meta div{ line-height:1.2; }
+                        table{ border-collapse: collapse; width:100%; }
+                        .outer{ border:2px solid #111; }
+                        th, td{ border:1px solid #333; padding:6px 8px; font-size:12px; }
+                        thead th{ background:#e5e7eb; font-weight:700; text-align:center; }
+                        tfoot td{ background:#eef2ff; font-weight:700; }
+                        .col-item{ width:60px; text-align:center; }
+                        .col-un{ width:80px; text-align:center; }
+                        .col-cant{ width:90px; text-align:right; }
+                        .col-pu{ width:120px; text-align:right; }
+                        .col-total{ width:120px; text-align:right; }
+                        .section{ font-weight:700; background:#f3f4f6; }
+                        .right{ text-align:right; }
+                        .center{ text-align:center; }
+                        .notes{ border:1px solid #333; padding:8px; margin-top:12px; min-height:90px; }
+                        .notes-title{ font-weight:700; margin-bottom:6px; }
+                        .summary{ margin-top:12px; width:100%; display:flex; justify-content:flex-end; }
+                        .summary table{ border-collapse:collapse; min-width:360px; }
+                        .summary td{ border:1px solid #333; padding:6px 8px; font-size:12px; }
+                        .summary .label{ background:#f8fafc; }
+                        .summary .total{ background:#eef2ff; font-weight:700; }
+                      `;
+                      let html = `<!doctype html><html><head><meta charset='utf-8'/><title>Vista previa</title><style>${styles}</style></head><body>`;
+                      const projName = (activeProject?.name || projectInfo?.nombreProyecto || 'Proyecto sin título');
+                      const clientName = (activeProject?.client || projectInfo?.propietario || '');
+                      const location = ((activeProject as any)?.location || [projectInfo?.direccion, projectInfo?.comuna, projectInfo?.ciudad].filter(Boolean).join(', '));
+                      const contract = ((activeProject as any)?.contract || (projectInfo as any)?.contrato || '');
+                      html += `<h1>Presupuesto — ${esc(projName)}</h1>`;
+                      html += `<div class='meta'><div>${projName? `<div><strong>Obra:</strong> ${esc(projName)}</div>`:''}${location? `<div><strong>Dirección:</strong> ${esc(location)}</div>`:''}</div><div style='text-align:right'><div><strong>Cliente:</strong> ${esc(clientName)}</div>${contract? `<div><strong>Contrato:</strong> ${esc(contract)}</div>`:''}</div></div>`;
+                      html += `<table class='outer'><thead><tr><th class='col-item'>Código</th><th>Descripción</th><th class='col-un'>Unidad</th><th class='col-cant'>Cantidad</th><th class='col-pu'>P.Unitario</th><th class='col-total'>P.Total</th></tr></thead><tbody>`;
+                      chapters.forEach((ch, ci)=>{
+                        const list = chMap[ch.id]||[]; if (!list.length) return;
+                        html += `<tr class='section'><td class='center'>${ci+1}</td><td>${ch.title}</td><td></td><td></td><td></td><td></td></tr>`;
+                        list.forEach((r, ri)=>{
+                          const idx = `${ci+1}.${ri+1}`;
+                          const subs: any[] = Array.isArray(r.subRows)? r.subRows : [];
+                          let rowDirectTotal = 0;
+                          let secMO = 0, secMAT = 0, secEQ = 0, secVAR = 0;
+                          if (!subs.length) {
+                            // Mostrar cabecera de PARTIDA en MAYÚSCULAS y destacada en gris
+                            html += `<tr class='section'><td class='center'>${idx}</td><td>${(r.descripcion||'Partida').toString().toUpperCase()}</td><td></td><td></td><td></td><td></td></tr>`;
+                            const sIdx = `${ci+1}.${ri+1}.1`;
+                            const un = (r.unidadSalida || (Array.isArray(r.apuIds) && r.apuIds[0] ? (getApuById(r.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                            const qty = Number(r.metrados||0);
+                            const pu = calcRowPu(r);
+                            const tot = (typeof r?.overrideTotal === 'number' && Number.isFinite(r.overrideTotal)) ? r.overrideTotal : (pu * qty);
+                            html += `<tr><td class='center'>${sIdx}</td><td>${'Subpartida'}</td><td class='center'>${un}</td><td class='right'>${qty? fmtQty(qty): ''}</td><td class='right'>${pu? fmtCl(pu): ''}</td><td class='right'>${tot? fmtCl(tot): ''}</td></tr>`;
+                            // Desglose por secciones desde los APUs del nivel partida
+                            const idsList:string[] = Array.isArray(r?.apuIds)&&r.apuIds.length? r.apuIds: (r?.apuId? [r.apuId]: []);
+                            for(const id of idsList){ try{ const apu = getApuById(id); if(!apu) continue; const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} }
+                            rowDirectTotal = secMO + secMAT + secEQ + secVAR;
+                          } else {
+                            // Fila cabecera de PARTIDA en MAYÚSCULAS y destacada en gris
+                            html += `<tr class='section'><td class='center'>${idx}</td><td>${(r.descripcion||'Partida').toString().toUpperCase()}</td><td></td><td></td><td></td><td></td></tr>`;
+                            subs.forEach((s, si)=>{
+                              const sIdx = `${ci+1}.${ri+1}.${si+1}`;
+                              const un = (s.unidadSalida || (Array.isArray(s.apuIds) && s.apuIds[0] ? (getApuById(s.apuIds[0])?.unidadSalida || '') : '') ) || '';
+                              const qty = Number(s?.metrados||0);
+                              const pu = calcSubPu(s);
+                              const tot = (typeof s?.overrideTotal === 'number' && Number.isFinite(s.overrideTotal)) ? s.overrideTotal : (pu * qty);
+                              html += `<tr><td class='center'>${sIdx}</td><td>${(s.descripcion||'Subpartida')}</td><td class='center'>${un}</td><td class='right'>${qty? fmtQty(qty): ''}</td><td class='right'>${pu? fmtCl(pu): ''}</td><td class='right'>${tot? fmtCl(tot): ''}</td></tr>`;
+                              rowDirectTotal += Number(tot||0);
+                              // Desglose por secciones de cada subrow
+                              const ids:string[] = Array.isArray(s?.apuIds)? s.apuIds: [];
+                              ids.forEach(id=>{ try{ const apu = getApuById(id); if(!apu) return; const b = unitCostBySection(apu, resources); secMO += b.manoObra*qty; secMAT += b.materiales*qty; secEQ += b.equipos*qty; secVAR += b.varios*qty; }catch{} });
+                            });
+                            rowDirectTotal = secMO + secMAT + secEQ + secVAR;
+                          }
+                          // Subtotales por secciones
+                          if(secMO) html += `<tr><td></td><td>Subtotal Mano de Obra</td><td></td><td></td><td></td><td class='right'>${fmtCl(secMO)}</td></tr>`;
+                          if(secMAT) html += `<tr><td></td><td>Subtotal Materiales</td><td></td><td></td><td></td><td class='right'>${fmtCl(secMAT)}</td></tr>`;
+                          if(secEQ) html += `<tr><td></td><td>Subtotal Equipos</td><td></td><td></td><td></td><td class='right'>${fmtCl(secEQ)}</td></tr>`;
+                          if(secVAR) html += `<tr><td></td><td>Subtotal Varios</td><td></td><td></td><td></td><td class='right'>${fmtCl(secVAR)}</td></tr>`;
+                          html += `<tr class='section'><td></td><td colspan='4'>COSTO DIRECTO partida ${(r.descripcion||'').toString().toLowerCase()}</td><td class='right'>${rowDirectTotal? fmtCl(rowDirectTotal): ''}</td></tr>`;
+                        });
+                      });
+                      html += `</tbody></table>`;
+                      const ggPct = Number(gg)||0, utilPct = Number(util)||0;
+                      const baseDirecto = Number(sumDirecto)||0;
+                      const ggAmt = baseDirecto * ggPct;
+                      const sub1 = baseDirecto + ggAmt;
+                      const utilAmt = sub1 * utilPct;
+                      const neto = baseDirecto + ggAmt + utilAmt;
+                      html += `<div class='summary'><table><tbody>
+                        <tr><td class='label right'>COSTO DIRECTO</td><td class='right'>${fmtCl(baseDirecto)}</td></tr>
+                        <tr><td class='label right'>utilidad (${(utilPct*100).toFixed(0)}%)</td><td class='right'>${fmtCl(utilAmt)}</td></tr>
+                        <tr><td class='label right'>gastos generales (${(ggPct*100).toFixed(0)}%)</td><td class='right'>${fmtCl(ggAmt)}</td></tr>
+                        <tr><td class='label right total'>total neto</td><td class='right total'>${fmtCl(neto)}</td></tr>
+                      </tbody></table></div>`;
+                      const notesBlock = (budgetNotes && String(budgetNotes).trim())
+                        ? `<div class='notes'><div class='notes-title'>Notas</div><div>${esc(budgetNotes).replace(/\n/g,'<br/>')}</div></div>`
+                        : `<div class='notes'><div class='notes-title'>Notas</div><div style='min-height:72px'></div></div>`;
+                      html += notesBlock;
+                      html += `</body></html>`;
+                      setPrintPreviewHtml(html);
+                      setPrintPreviewOpen(true);
+                    } catch {}
+                  }} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm inline-flex items-center gap-1" title="Vista previa e imprimir" aria-label="Vista previa e imprimir"><PrinterIcon className="h-4 w-4"/> Imprimir</button>
+                  <button onClick={()=>{
+                    // Inicia flujo de nuevo presupuesto: modal de proyecto vacío y forzar 'create'
+                    setProjectModalInitial({ nombre:'', propietario:'', direccion:'', ciudad:'', comuna:'', fecha:'', plazoDias:'' });
+                    setNewBudgetFlow(true);
+                    setShowProjectInfoModalForSave(true);
+                  }} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm inline-flex items-center gap-1" title="Nuevo proyecto" aria-label="Nuevo proyecto"><PlusIcon className="h-4 w-4"/> Nuevo proyecto</button>
+                  <button onClick={()=>{
+                    // Abrir modal para completar información del proyecto antes de crear o actualizar el stick
+                    setShowProjectInfoModalForSave(true);
+                    return;
+                  }} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Guardar presupuesto" aria-label="Guardar presupuesto">💾 Guardar</button>
+                  <button onClick={()=>{
+                    if(!confirm('¿Borrar TODO el presupuesto (capítulos y partidas)? Esta acción no se puede deshacer.')) return;
+                    try{ localStorage.removeItem('apu-budget'); }catch{}
+                    try{ localStorage.removeItem('apu-chapters'); }catch{}
+                    try{ localStorage.removeItem('apu-current-chapter'); }catch{}
+                    setRows([]);
+                    setChapters([]);
+                    setCurrentChapterId('');
+                    // Eliminar proyecto del stick si existe y no es inline
+                    try{
+                      if(activeProjectId && activeProjectId !== 'inline'){
+                        setSavedProjectsList((prev:any[] = [])=> prev.filter(p => String(p?.id||'') !== String(activeProjectId)));
+                        setActiveProjectId(null);
+                        showNotification('Presupuesto y proyecto del stick borrados','info');
+                      } else {
+                        showNotification('Presupuesto borrado','info');
+                      }
+                    }catch{ showNotification('Presupuesto borrado','info'); }
+                  }} className="px-3 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" title="Eliminar presupuesto" aria-label="Eliminar presupuesto">🗑️ Eliminar presupuesto</button>
                   </div>
                 </div>
 
@@ -6374,7 +6780,16 @@ const App: React.FC = () => {
                   onUpdateSubRow={(parentId, subId, patch)=>{
                     const next = rows.map(r=>{
                       if(r.id!==parentId) return r;
-                      const subs = (r.subRows||[]).map((s:any)=> s.id===subId? { ...s, ...patch } : s);
+                      const subs = (r.subRows||[]).map((s:any)=> {
+                        if(s.id!==subId) return s;
+                        const nextS:any = { ...s, ...patch };
+                        // Si se cambian los APUs asociados explícitamente, forzar recálculo limpiando overrides
+                        if(Object.prototype.hasOwnProperty.call(patch, 'apuIds')){
+                          nextS.overrideUnitPrice = undefined;
+                          nextS.overrideTotal = undefined;
+                        }
+                        return nextS;
+                      });
                       return { ...r, subRows: subs };
                     });
                     setRows(next); saveBudget(next);
@@ -6707,19 +7122,6 @@ function ApuDetailModal({open, onClose, apu, fmt, resources, onSave}:{open:boole
             </div>
           </div>
           <div className="flex items-center gap-2">
-              <button
-                onClick={()=>{
-                  try {
-                    const payload = { apuId: String(apu?.id||''), descripcion: apuMeta.descripcion, unidadSalida: apuMeta.unidadSalida, metrados: 1 };
-                    localStorage.setItem('calculator-inject', JSON.stringify(payload));
-                  } catch {}
-                  onClose();
-                }}
-                className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-white text-xs"
-                title="Agregar este APU a la Calculadora"
-              >
-                Agregar a Calculadora
-              </button>
             <button
               onClick={()=>{
                 if(!confirm('¿Borrar TODAS las secciones y dejar solo una vacía?')) return;

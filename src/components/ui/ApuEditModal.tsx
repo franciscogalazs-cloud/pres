@@ -58,6 +58,7 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
             onClick={onClose}
             className="text-slate-400 transition hover:text-slate-600"
             aria-label="Cerrar"
+            title="Cerrar"
           >
             ×
           </button>
@@ -123,6 +124,8 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
             <button
               type="submit"
               className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              title="Guardar APU"
+              aria-label="Guardar APU"
             >
               Guardar
             </button>
@@ -130,6 +133,8 @@ export const ApuEditModal: React.FC<ApuEditModalProps> = ({ open, apu, onClose, 
               type="button"
               onClick={onClose}
               className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              title="Cerrar"
+              aria-label="Cerrar"
             >
               Cerrar
             </button>

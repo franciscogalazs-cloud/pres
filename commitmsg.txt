@@ -1,1 +1,1 @@
-tour: add optional step for calc add-suggested; auto-skip optional steps when target missing; tag buttons with data-tour calc-add-suggested
+feat(calculator): ghost costs preview in APU selector\n\n- Show unit cost on hover for each APU\n- Show hypothetical total when subpartida quantity is known\n- Unit mismatch hint (APU vs target)\n- Wire resources, apusIndex, target unit/qty, and CLP formatter from Calculator\n\nBuild: PASS | Tests: PASS | Lint: PASS

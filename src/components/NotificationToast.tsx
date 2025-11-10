@@ -33,7 +33,8 @@ export const NotificationToast: React.FC<NotificationToastProps> = React.memo(
               <button
                 onClick={() => onDismiss(notification.id)}
                 className="text-white/80 hover:text-white transition-colors"
-                aria-label="Cerrar notificacion"
+                aria-label="Cerrar notificación"
+                title="Cerrar notificación"
               >
                 x
               </button>

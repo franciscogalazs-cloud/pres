@@ -504,6 +504,9 @@ export const AccessibleButton: React.FC<AccessibleButtonProps> = ({
   
   const buttonClass = `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
   
+  // Extraer title para poder proporcionar un fallback desde ariaLabel si no viene
+  const { title, ...restProps } = props as { title?: string } & typeof props;
+
   return (
     <button
       className={buttonClass}
@@ -511,7 +514,8 @@ export const AccessibleButton: React.FC<AccessibleButtonProps> = ({
       aria-label={ariaLabel}
       aria-describedby={ariaDescribedBy}
       aria-busy={loading}
-      {...props}
+      title={title ?? ariaLabel}
+      {...restProps}
     >
       {loading ? (
         <div className="flex items-center gap-2">

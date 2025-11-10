@@ -1,5 +1,5 @@
 import React from 'react';
-import { isApuIncomplete } from '../../utils/match';
+import { isApuIncomplete, isApuIncompleteDetail } from '../../utils/match';
 import { unitCost } from '../../utils/calculations';
 
 export type SelectApuModalProps = {
@@ -35,7 +35,7 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
       <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between p-4 border-b border-slate-800">
           <h3 className="text-lg font-semibold">Seleccionar APU</h3>
-          <button onClick={onClose} className="text-slate-300 hover:text-white">×</button>
+          <button onClick={onClose} className="text-slate-300 hover:text-white" title="Cerrar" aria-label="Cerrar">×</button>
         </div>
         <div className="p-4 grid gap-3">
           <div className="flex items-center gap-2">
@@ -62,7 +62,8 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
                 </thead>
                 <tbody>
                   {list.map((a: any) => {
-                    const incomplete = isApuIncomplete(a) || !String(a?.unidadSalida||'').trim();
+                    const det = isApuIncompleteDetail(a);
+                    const incomplete = det.incomplete || !String(a?.unidadSalida||'').trim();
                     let unitGhost: number | null = null;
                     let totalGhost: number | null = null;
                     if (!incomplete) {
@@ -83,7 +84,14 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
                             {incomplete && (
                               <span
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-300 text-[10px]"
-                                title="Este APU no tiene costo calculable o le falta unidad/secciones"
+                                title={(() => {
+                                  const reasons = new Set<string>([
+                                    ...det.reasons,
+                                    ...(!String(a?.unidadSalida||'').trim() ? ['sin unidad'] : []),
+                                  ]);
+                                  const list = Array.from(reasons);
+                                  return list.length ? `Incompleto: ${list.join(', ')}` : 'Incompleto';
+                                })()}
                                 aria-label="APU incompleto"
                               >
                                 incompleto
@@ -115,7 +123,7 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
                           )}
                         </td>
                         <td className="py-2 px-3 text-right">
-                          <button onClick={() => onPick(a.id)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs">Seleccionar</button>
+                          <button onClick={() => onPick(a.id)} className="px-2 py-1 rounded border border-slate-600 hover:bg-slate-700/30 text-xs" title="Seleccionar APU" aria-label="Seleccionar APU">Seleccionar</button>
                         </td>
                       </tr>
                     );
@@ -126,9 +134,9 @@ export default function SelectApuModal({ open, onClose, onPick, apus, onCreateNe
           )}
           <div className="flex justify-end gap-2">
             {onCreateNew && (
-              <button onClick={onCreateNew} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm">+ Crear nuevo APU</button>
+              <button onClick={onCreateNew} className="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700/40 text-sm" title="Crear nuevo APU" aria-label="Crear nuevo APU">+ Crear nuevo APU</button>
             )}
-            <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600 text-sm">Cerrar</button>
+            <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-600 text-sm" title="Cerrar" aria-label="Cerrar">Cerrar</button>
           </div>
         </div>
       </div>

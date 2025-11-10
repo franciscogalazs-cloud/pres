@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
 import Row from "./Row";
 
 type Props = {
@@ -54,10 +54,10 @@ export default function BudgetTable({ chapters, rows, getApuById, unitCost, reso
         if (!chRows.length) return (
           <div key={ch.id} className="rounded-2xl border border-slate-700/60 px-3 py-2">
             <div className="flex items-center gap-2">
-              <button onClick={()=>toggle(ch.id)} className="p-1 rounded hover:bg-slate-700/60" aria-label="Expandir/colapsar capítulo">
-                <ChevronRightIcon className="h-5 w-5"/>
+              <button onClick={()=>toggle(ch.id)} className="p-1 rounded hover:bg-slate-700/60" aria-label="Mostrar/Ocultar capítulo" title="Mostrar/Ocultar capítulo">
+                <EyeIcon className="h-5 w-5"/>
               </button>
-              <button onClick={()=>onAddSubChapter && onAddSubChapter(ch.id)} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-1 text-sm font-semibold hover:bg-slate-700">
+              <button onClick={()=>onAddSubChapter && onAddSubChapter(ch.id)} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-1 text-sm font-semibold hover:bg-slate-700" title="Agregar subcapítulo" aria-label="Agregar subcapítulo">
                 <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-700">{ch.letter}</span>
                 <span>{ch.title}</span>
               </button>
@@ -71,10 +71,10 @@ export default function BudgetTable({ chapters, rows, getApuById, unitCost, reso
           <div key={ch.id} className="rounded-2xl border border-slate-700/60">
             <div className="px-4 pt-3">
               <div className="flex items-center gap-2">
-                <button onClick={()=>toggle(ch.id)} className="p-1 rounded hover:bg-slate-700/60" aria-label="Expandir/colapsar capítulo">
-                  {isCollapsed ? <ChevronRightIcon className="h-5 w-5"/> : <ChevronDownIcon className="h-5 w-5"/>}
+                <button onClick={()=>toggle(ch.id)} className="p-1 rounded hover:bg-slate-700/60" aria-label="Mostrar/Ocultar capítulo" title="Mostrar/Ocultar capítulo">
+                  {isCollapsed ? <EyeIcon className="h-5 w-5"/> : <EyeSlashIcon className="h-5 w-5"/>}
                 </button>
-                <button onClick={()=>onAddSubChapter && onAddSubChapter(ch.id)} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-1 text-sm font-semibold hover:bg-slate-700">
+                <button onClick={()=>onAddSubChapter && onAddSubChapter(ch.id)} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-1 text-sm font-semibold hover:bg-slate-700" title="Agregar subcapítulo" aria-label="Agregar subcapítulo">
                   <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-700">{ch.letter}</span>
                   <span>{ch.title}</span>
                 </button>

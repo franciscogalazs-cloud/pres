@@ -46,6 +46,8 @@ const ProjectComparison: React.FC<ProjectComparisonProps> = ({ projects, onClose
           <button
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="Cerrar comparación"
+            aria-label="Cerrar comparación"
           >
             Cerrar
           </button>
@@ -347,12 +349,16 @@ const ProjectMetadataModal: React.FC<ProjectMetadataModalProps> = ({ isOpen, pro
               type="button"
               onClick={onClose}
               className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+              title="Cancelar"
+              aria-label="Cancelar"
             >
               Cancelar
             </button>
             <button
               type="submit"
               className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+              title="Guardar metadatos"
+              aria-label="Guardar metadatos"
             >
               Guardar
             </button>
@@ -405,6 +411,8 @@ export const ProjectManager: React.FC = () => {
             <button
               onClick={modals.startComparison}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              title="Comparar proyectos seleccionados"
+              aria-label="Comparar proyectos seleccionados"
             >
               Comparar ({comparison.selectedIds.length})
             </button>
@@ -413,6 +421,8 @@ export const ProjectManager: React.FC = () => {
           <button
             onClick={modals.openCreateModal}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            title="Crear nuevo proyecto"
+            aria-label="Crear nuevo proyecto"
           >
             Nuevo Proyecto
           </button>
@@ -469,18 +479,16 @@ export const ProjectManager: React.FC = () => {
             No hay proyectos
           </h3>
           <p className="text-slate-600 dark:text-slate-400 mb-6">
-            {search.term || filters.status !== 'all'
-              ? 'No se encontraron proyectos con los filtros seleccionados'
-              : 'Comienza creando tu primer proyecto'}
+            Crea tu primer proyecto para comenzar a trabajar con presupuestos y APUs.
           </p>
-          {!search.term && filters.status === 'all' && (
-            <button
-              onClick={modals.openCreateModal}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              Crear primer proyecto
-            </button>
-          )}
+          <button
+            onClick={modals.openCreateModal}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            title="Crear primer proyecto"
+            aria-label="Crear primer proyecto"
+          >
+            Crear primer proyecto
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -529,6 +537,8 @@ export const ProjectManager: React.FC = () => {
                   key={projectId}
                   onClick={() => setActiveProject(projectId)}
                   className="flex-shrink-0 w-48 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-slate-300 dark:hover:border-slate-600 transition-colors text-left"
+                  title="Abrir proyecto"
+                  aria-label="Abrir proyecto"
                 >
                   <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
                     {project.name}

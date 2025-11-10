@@ -61,16 +61,26 @@ export const normalizeUnitCanonical = (u: string): string => {
 export type ApuLike = { id: string; descripcion: string; unidadSalida?: string; secciones?: any; items?: any[] };
 
 export const isApuIncomplete = (apu: ApuLike): boolean => {
-  // Incompleto si no hay secciones/items o si todas las filas tienen pu=0
-  const s = (apu as any).secciones || {};
-  const rows = [s.materiales, s.manoObra, s.equipos, s.varios]
-    .flat()
-    .filter(Boolean) as Array<{ pu?: number; cantidad?: number }>;
-  const anyPU = rows.some(r => Number(r?.pu || 0) > 0);
-  if (Array.isArray((apu as any).items) && (apu as any).items.length > 0) return false;
-  if (!rows.length || !anyPU) return true;
-  return false;
+  return isApuIncompleteDetail(apu).incomplete;
 };
+
+export function isApuIncompleteDetail(apu: ApuLike): { incomplete: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!apu) return { incomplete: true, reasons: ['APU inexistente'] };
+  const unit = String((apu as any).unidadSalida || '').trim();
+  if (!unit) reasons.push('sin unidad');
+  const s = (apu as any).secciones || {};
+  const arr = [s.materiales, s.manoObra, s.equipos, s.varios].filter(Boolean);
+  const rows = arr.flat().filter(Boolean) as Array<{ pu?: number; cantidad?: number }>;
+  const hasRows = rows.length > 0;
+  if (!hasRows && !Array.isArray((apu as any).items)) reasons.push('sin secciones/items');
+  const anyPU = rows.some(r => Number(r?.pu || 0) > 0);
+  if (hasRows && !anyPU) reasons.push('PU=0 en todas las filas');
+  // Si existen items legacy se considera potencialmente completo (se calculará por recursos), salvo que no haya unidad
+  const hasItems = Array.isArray((apu as any).items) && (apu as any).items.length > 0;
+  const incomplete = reasons.length > 0 && !hasItems;
+  return { incomplete, reasons };
+}
 
 export function groupSimilarApus(apus: ApuLike[], opts?: { threshold?: number; sameUnit?: boolean }) {
   const th = opts?.threshold ?? 0.42; // umbral conservador

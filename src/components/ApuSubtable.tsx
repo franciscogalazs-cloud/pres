@@ -34,7 +34,7 @@ export default function ApuSubtable({ apuIds, /* unused */ qty: _qty, getApuById
                   </button>
                   <div className="flex items-center gap-2">
                     {onOpenPicker && (
-                      <button onClick={onOpenPicker} className="px-2 py-1 rounded-md text-[11px] border border-slate-600 hover:bg-slate-700/30">+ APU</button>
+                      <button onClick={onOpenPicker} className="px-2 py-1 rounded-md text-[11px] border border-slate-600 hover:bg-slate-700/30" title="Agregar APU" aria-label="Agregar APU">+ APU</button>
                     )}
                     {onRemoveApu && (
                       <button onClick={()=>onRemoveApu(id)} className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/60" title="Quitar APU" aria-label="Quitar APU">
@@ -54,7 +54,7 @@ export default function ApuSubtable({ apuIds, /* unused */ qty: _qty, getApuById
         })}
         {onOpenPicker && (
           <div>
-            <button type="button" onClick={onOpenPicker} className="text-[11px] text-slate-400 hover:text-slate-200 hover:underline">+ Agregar APU</button>
+            <button type="button" onClick={onOpenPicker} className="text-[11px] text-slate-400 hover:text-slate-200 hover:underline" title="Agregar APU" aria-label="Agregar APU">+ Agregar APU</button>
           </div>
         )}
       </div>

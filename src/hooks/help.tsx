@@ -485,6 +485,8 @@ const TourOverlay: React.FC = () => {
               <button
                 onClick={stopTour}
                 className="text-slate-400 hover:text-slate-200"
+                title="Cerrar tour"
+                aria-label="Cerrar tour"
                 >
                 ✕
               </button>
@@ -501,14 +503,14 @@ const TourOverlay: React.FC = () => {
                 ))}
               </div>
               <div className="flex flex-wrap gap-2 ml-auto">
-                <button onClick={() => { localStorage.setItem('apu-tour-completed','true'); stopTour(); }} className="px-3 py-2 text-slate-400 hover:text-slate-200">Saltar</button>
+                <button onClick={() => { localStorage.setItem('apu-tour-completed','true'); stopTour(); }} className="px-3 py-2 text-slate-400 hover:text-slate-200" title="Saltar tour" aria-label="Saltar tour">Saltar</button>
                 {currentTourStep > 0 && (
-                  <button onClick={prevTourStep} className="px-4 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-700/60">Anterior</button>
+                  <button onClick={prevTourStep} className="px-4 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-700/60" title="Paso anterior" aria-label="Paso anterior">Anterior</button>
                 )}
                 {currentTourStep < tourSteps.length - 1 ? (
-                  <button onClick={nextTourStep} className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-medium">Siguiente</button>
+                  <button onClick={nextTourStep} className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-medium" title="Siguiente paso" aria-label="Siguiente paso">Siguiente</button>
                 ) : (
-                  <button onClick={completeTour} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium">Finalizar</button>
+                  <button onClick={completeTour} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium" title="Finalizar tour" aria-label="Finalizar tour">Finalizar</button>
                 )}
               </div>
             </div>
@@ -526,7 +528,7 @@ const TourOverlay: React.FC = () => {
           <div className="bg-slate-800 text-slate-100 rounded-xl shadow-2xl border border-slate-700 p-5 pointer-events-auto" role="dialog" aria-modal="true">
             <div className="flex items-start justify-between mb-4">
               <h3 className="text-lg font-semibold">{currentStep.title}</h3>
-              <button onClick={stopTour} className="text-slate-400 hover:text-slate-200">✕</button>
+              <button onClick={stopTour} className="text-slate-400 hover:text-slate-200" title="Cerrar tour" aria-label="Cerrar tour">✕</button>
             </div>
             <p className="text-slate-300 mb-3">{currentStep.content}</p>
             <div className="text-xs text-slate-400 mb-4">Paso {currentTourStep+1} de {tourSteps.length}</div>
@@ -537,12 +539,12 @@ const TourOverlay: React.FC = () => {
                 ))}
               </div>
               <div className="flex space-x-2">
-                <button onClick={() => { localStorage.setItem('apu-tour-completed','true'); stopTour(); }} className="px-3 py-2 text-slate-400 hover:text-slate-200">Saltar</button>
-                {currentTourStep > 0 && (<button onClick={prevTourStep} className="px-4 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-700/60">Anterior</button>)}
+                <button onClick={() => { localStorage.setItem('apu-tour-completed','true'); stopTour(); }} className="px-3 py-2 text-slate-400 hover:text-slate-200" title="Saltar tour" aria-label="Saltar tour">Saltar</button>
+                {currentTourStep > 0 && (<button onClick={prevTourStep} className="px-4 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-700/60" title="Paso anterior" aria-label="Paso anterior">Anterior</button>)}
                 {currentTourStep < tourSteps.length - 1 ? (
-                  <button onClick={nextTourStep} className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-medium">Siguiente</button>
+                  <button onClick={nextTourStep} className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-medium" title="Siguiente paso" aria-label="Siguiente paso">Siguiente</button>
                 ) : (
-                  <button onClick={completeTour} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium">Finalizar</button>
+                  <button onClick={completeTour} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium" title="Finalizar tour" aria-label="Finalizar tour">Finalizar</button>
                 )}
               </div>
             </div>
